@@ -1,0 +1,25 @@
+# Dockerfile para desarrollo con hot-reload
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Instalar dependencias globales para desarrollo
+RUN npm install -g nodemon ts-node typescript
+
+# Copiar archivos de dependencias
+COPY package*.json ./
+COPY tsconfig.json ./
+
+# Instalar todas las dependencias (incluyendo devDependencies)
+RUN npm install
+
+# Exponer el puerto
+EXPOSE 4000
+
+# Variables de entorno por defecto
+ENV NODE_ENV=development
+ENV PORT=4000
+
+# Comando para desarrollo con hot-reload
+CMD ["npm", "run", "dev"]

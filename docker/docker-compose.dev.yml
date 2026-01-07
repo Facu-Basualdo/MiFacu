@@ -1,0 +1,37 @@
+version: '3.8'
+
+# Docker Compose para desarrollo
+# Usa este archivo para desarrollo con hot-reload
+
+services:
+  # Backend API en modo desarrollo
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.dev
+    container_name: mifacu-backend-dev
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=development
+      - PORT=4000
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+    env_file:
+      - ../backend/.env
+    volumes:
+      # Montar el código fuente para hot-reload
+      - ../backend/src:/app/src
+      - ../backend/package.json:/app/package.json
+      - ../backend/tsconfig.json:/app/tsconfig.json
+      # Excluir node_modules del volumen
+      - /app/node_modules
+    restart: unless-stopped
+    networks:
+      - mifacu-network
+    command: npm run dev
+
+networks:
+  mifacu-network:
+    driver: bridge
