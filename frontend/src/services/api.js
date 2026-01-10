@@ -26,7 +26,7 @@ if (Platform.OS === 'android') {
 } else if (Platform.OS === 'ios') {
     // iOS simulator puede usar localhost
     // Para dispositivo físico iOS, usar tu IP local
-    API_URL = 'http://localhost:4000'; // Cambia a 'http://192.168.18.18:4000' si usas dispositivo físico
+    API_URL = 'http://192.168.0.20:4000'; // IP local de tu máquina Windows
 }
 
 // Para desarrollo web, siempre usar localhost

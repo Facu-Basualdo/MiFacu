@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Docker Compose para desarrollo
 # Usa este archivo para desarrollo con hot-reload
 
@@ -19,7 +17,7 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
     env_file:
-      - ../backend/.env
+      - .env
     volumes:
       # Montar el código fuente para hot-reload
       - ../backend/src:/app/src
