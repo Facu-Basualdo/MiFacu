@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
+// import * as Notifications from 'expo-notifications'; (Removed)
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Dimensions, Modal, Platform, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -17,18 +17,14 @@ const PALETA_COLORES = [
   '#5856D6', // Violeta
 ];
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+// Notifications setup removed
 
-import { api } from '../src/services/api';
+import { DataRepository } from '../src/services/dataRepository';
+import { useAuth } from '../src/context/AuthContext';
 
 export default function FinalesScreen() {
   const router = useRouter();
+  const { isGuest } = useAuth();
 
   const [examenes, setExamenes] = useState<any[]>([]);
 
@@ -38,19 +34,19 @@ export default function FinalesScreen() {
   const [nuevaHora, setNuevaHora] = useState('');
   const [nuevoColor, setNuevoColor] = useState(PALETA_COLORES[0]);
 
-  const notificationListener = useRef();
-  const responseListener = useRef();
+  // const notificationListener = useRef<Notifications.Subscription>();
+  // const responseListener = useRef<Notifications.Subscription>();
 
   const loadData = async () => {
     try {
-      const data = await api.getFinales();
-      const mapped = data.map(item => ({
+      const data = await DataRepository.getFinales(isGuest);
+      const mapped = data.map((item: any) => ({
         id: item.id,
-        materia: item.materia ? item.materia.nombre : 'Unknown',
+        // In Guest mode, we have materiaNombre. In DB mode, we have item.materia.nombre
+        materia: item.materia?.nombre || item.materiaNombre || 'Unknown',
         fecha: item.fecha.toString().split('T')[0].split('-').reverse().slice(0, 2).join('/'),
         hora: item.hora ? item.hora.toString().slice(0, 5) : "00:00",
         color: item.color,
-        avisar: item.notificado
       }));
       setExamenes(mapped);
     } catch (e) { console.error(e); }
@@ -58,16 +54,10 @@ export default function FinalesScreen() {
 
   useEffect(() => {
     loadData();
-    registerForPushNotificationsAsync();
-    notificationListener.current = Notifications.addNotificationReceivedListener(notification => { });
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => { });
-    return () => {
-      if (notificationListener.current) notificationListener.current.remove();
-      if (responseListener.current) responseListener.current.remove();
-    };
-  }, []);
+    loadData();
+  }, [isGuest]); // Re-load when guest status changes
 
-  const parseDate = (fechaStr) => {
+  const parseDate = (fechaStr: string) => {
     if (!fechaStr || !fechaStr.includes('/')) return new Date();
     const [dia, mes] = fechaStr.split('/').map(Number);
     const hoy = new Date();
@@ -76,10 +66,10 @@ export default function FinalesScreen() {
     return new Date(anio, mes - 1, dia);
   };
 
-  const getTiempoRestante = (fechaStr) => {
+  const getTiempoRestante = (fechaStr: string) => {
     const fechaExamen = parseDate(fechaStr);
     const hoy = new Date();
-    const diffTime = fechaExamen - hoy;
+    const diffTime = fechaExamen.getTime() - hoy.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
     if (diffDays < 0) return "Finalizado";
@@ -103,7 +93,7 @@ export default function FinalesScreen() {
         {
           text: "Borrar", style: "destructive", onPress: async () => {
             try {
-              await api.deleteFinal(id);
+              await DataRepository.deleteFinal(isGuest, id);
               loadData();
             } catch (e) { Alert.alert("Error al borrar"); }
           }
@@ -114,16 +104,7 @@ export default function FinalesScreen() {
 
   // --- NUEVA LÓGICA DE TOGGLE NOTIFICACIÓN ---
   // (Simplified for now as backend update is not implemented)
-  const toggleNotificacion = (id) => {
-    setExamenes(prev => prev.map(e => {
-      if (e.id === id) {
-        const nuevoEstado = !e.avisar;
-        if (nuevoEstado) Alert.alert("🔔 Activado", `Te avisaremos 24hs antes de ${e.materia}`);
-        return { ...e, avisar: nuevoEstado };
-      }
-      return e;
-    }));
-  };
+  // Notifications logic removed
 
   const handleChangeFecha = (text) => {
     let limpio = text.replace(/[^0-9]/g, '');
@@ -138,22 +119,7 @@ export default function FinalesScreen() {
     setNuevaHora(limpio);
   };
 
-  const testNotificacion = async (materia, hora) => {
-    try {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "⏰ Recordatorio de Examen",
-          body: `Éxitos en ${materia}. Recuerda: ${hora}hs`,
-          sound: true,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-          seconds: 2,
-          repeats: false,
-        },
-      });
-    } catch (e) { console.log(e); }
-  };
+  // testNotificacion removed
 
   const handleAgregar = async () => {
     if (!nuevaMateria || nuevaFecha.length < 5) return Alert.alert("Faltan datos");
@@ -170,25 +136,15 @@ export default function FinalesScreen() {
     };
 
     try {
-      await api.createFinal(nuevo);
+      await DataRepository.createFinal(isGuest, nuevo);
       setModalVisible(false);
       loadData();
-      await testNotificacion(nuevaMateria, nuevaHora);
     } catch (e) { Alert.alert("Error creando"); }
 
     setNuevaMateria(''); setNuevaFecha(''); setNuevaHora(''); setNuevoColor(PALETA_COLORES[0]);
   };
 
-  async function registerForPushNotificationsAsync() {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-      });
-    }
-  }
+  // registerForPushNotificationsAsync removed
 
   return (
     <View style={styles.container}>
@@ -233,17 +189,7 @@ export default function FinalesScreen() {
                     <Text style={styles.cardCountdown}>{getTiempoRestante(examen.fecha)}</Text>
                   </View>
 
-                  {/* --- BOTÓN DE CAMPANA (NOTIFICACIÓN) --- */}
-                  <TouchableOpacity
-                    style={styles.bellButton}
-                    onPress={() => toggleNotificacion(examen.id)}
-                  >
-                    <Ionicons
-                      name={examen.avisar ? "notifications" : "notifications-off"}
-                      size={24}
-                      color="rgba(255,255,255,0.9)"
-                    />
-                  </TouchableOpacity>
+                  {/* Bell button removed */}
 
                 </View>
 

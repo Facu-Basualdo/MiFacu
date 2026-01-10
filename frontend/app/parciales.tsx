@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
+// import * as Notifications from 'expo-notifications'; (Removed)
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Dimensions, Modal, Platform, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -11,26 +11,22 @@ const BUTTON_WIDTH = 80;
 
 const PALETA_COLORES = ['#FF9500', '#007AFF', '#FF3B30', '#34C759', '#5856D6'];
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+// Notifications setup removed
 
-import { api } from '../src/services/api';
+import { DataRepository } from '../src/services/dataRepository';
+import { useAuth } from '../src/context/AuthContext';
 
 export default function ParcialesScreen() {
   const router = useRouter();
+  const { isGuest } = useAuth();
 
   const [eventos, setEventos] = useState<any[]>([]);
 
   const loadData = async () => {
     try {
-      const data = await api.getRecordatorios();
+      const data = await DataRepository.getRecordatorios(isGuest);
       // Map API data to component format
-      const mapped = data.map(item => ({
+      const mapped = data.map((item: any) => ({
         id: item.id,
         titulo: item.nombre,
         materia: item.materia ? item.materia.nombre : 'Sin Materia',
@@ -38,7 +34,7 @@ export default function ParcialesScreen() {
         fecha: item.fecha.toString().split('T')[0].split('-').reverse().slice(0, 2).join('/'), // YYYY-MM-DD -> DD/MM
         hora: item.hora ? item.hora.toString().slice(0, 5) : "00:00",
         color: item.color,
-        avisar: item.notificado
+        // avisar: item.notificado (Removed)
       }));
       setEventos(mapped);
     } catch (e) {
@@ -49,24 +45,23 @@ export default function ParcialesScreen() {
 
   useEffect(() => {
     loadData();
-    // ... notifications ..
-  }, []);
+  }, [isGuest]);
 
   const [modalVisible, setModalVisible] = useState(false);
 
   // Estados del Formulario
   const [nuevoTitulo, setNuevoTitulo] = useState('');
-  const [nuevaMateria, setNuevaMateria] = useState('');
+  // const [nuevaMateria, setNuevaMateria] = useState(''); // Removed
   const [nuevaFecha, setNuevaFecha] = useState('');
   const [nuevaHora, setNuevaHora] = useState('');
   const [nuevoTipo, setNuevoTipo] = useState('PARCIAL'); // 'PARCIAL' o 'ENTREGA'
   const [nuevoColor, setNuevoColor] = useState(PALETA_COLORES[0]);
 
-  const notificationListener = useRef();
-  const responseListener = useRef();
+  // const notificationListener = useRef<Notifications.Subscription>();
+  // const responseListener = useRef<Notifications.Subscription>();
 
   // --- LÓGICA DE FECHAS ---
-  const parseDate = (fechaStr) => {
+  const parseDate = (fechaStr: string) => {
     if (!fechaStr || !fechaStr.includes('/')) return new Date();
     const [dia, mes] = fechaStr.split('/').map(Number);
     const hoy = new Date();
@@ -75,7 +70,7 @@ export default function ParcialesScreen() {
     return new Date(anio, mes - 1, dia);
   };
 
-  const getTiempoRestante = (fechaStr) => {
+  const getTiempoRestante = (fechaStr: string) => {
     const fechaEvento = parseDate(fechaStr);
     const hoy = new Date();
     const diffTime = fechaEvento - hoy;
@@ -89,7 +84,29 @@ export default function ParcialesScreen() {
   };
 
   const getEventosOrdenados = () => {
-    return [...eventos].sort((a, b) => parseDate(a.fecha) - parseDate(b.fecha));
+    return [...eventos].sort((a, b) => parseDate(a.fecha).getTime() - parseDate(b.fecha).getTime());
+  };
+
+  const confirmarEliminacion = (id: number) => {
+    Alert.alert(
+      "¿Borrar Evento?",
+      "Se eliminará de tu lista.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Borrar", style: "destructive", onPress: async () => {
+            try {
+              if (isGuest) {
+                await DataRepository.deleteRecordatorio(true, id);
+              } else {
+                await DataRepository.deleteRecordatorio(false, id);
+              }
+              loadData();
+            } catch (e) { Alert.alert("Error al borrar"); }
+          }
+        }
+      ]
+    );
   };
 
 
@@ -107,34 +124,11 @@ export default function ParcialesScreen() {
     setNuevaHora(limpio);
   };
 
-  const toggleNotificacion = (id) => {
-    setEventos(prev => prev.map(e => {
-      if (e.id === id) {
-        const nuevoEstado = !e.avisar;
-        if (nuevoEstado) Alert.alert("🔔 Activado", "Te avisaremos 24hs antes.");
-        return { ...e, avisar: nuevoEstado };
-      }
-      return e;
-    }));
-  };
-
-  // --- NOTIFICACIÓN ---
-  const programarNotificacion = async (titulo, materia, tipo) => {
-    const cuerpo = tipo === 'PARCIAL'
-      ? `¡A estudiar! Mañana es el ${titulo} de ${materia}.`
-      : `¡Atención! Mañana vence la entrega: ${titulo} (${materia}).`;
-
-    try {
-      await Notifications.scheduleNotificationAsync({
-        content: { title: `📅 ${tipo === 'PARCIAL' ? 'Parcial' : 'Entrega'} Mañana`, body: cuerpo, sound: true },
-        trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 2, repeats: false },
-      });
-    } catch (e) { console.log(e); }
-  };
+  // Notifications logic removed
 
   const handleAgregar = async () => {
-    if (!nuevaMateria || !nuevoTitulo || nuevaFecha.length < 5) {
-      Alert.alert("Faltan datos", "Por favor completa todos los campos requeridos");
+    if (!nuevoTitulo || nuevaFecha.length < 5) {
+      Alert.alert("Faltan datos", "Por favor completa el nombre y la fecha");
       return;
     }
 
@@ -154,7 +148,7 @@ export default function ParcialesScreen() {
 
     const nuevo = {
       nombre: nuevoTitulo.toUpperCase(),
-      materiaNombre: nuevaMateria.toUpperCase(),
+      materiaNombre: 'GENERAL', // Default materia
       tipo: nuevoTipo === 'PARCIAL' ? 'Parcial' : 'Entrega',
       fecha: isoDate,
       hora: horaFormateada,
@@ -162,10 +156,9 @@ export default function ParcialesScreen() {
     };
 
     try {
-      await api.createRecordatorio(nuevo);
+      await DataRepository.createRecordatorio(isGuest, nuevo);
       setModalVisible(false);
       loadData(); // Reload from DB
-      await programarNotificacion(nuevoTitulo, nuevaMateria, nuevoTipo);
       Alert.alert("Éxito", "Recordatorio creado correctamente");
     } catch (e) {
       console.error("Error creando recordatorio:", e);
@@ -174,19 +167,10 @@ export default function ParcialesScreen() {
     }
 
     // Reset
-    setNuevoTitulo(''); setNuevaMateria(''); setNuevaFecha(''); setNuevaHora(''); setNuevoColor(PALETA_COLORES[0]);
+    setNuevoTitulo(''); setNuevaFecha(''); setNuevaHora(''); setNuevoColor(PALETA_COLORES[0]);
   };
 
-  async function registerForPushNotificationsAsync() {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-      });
-    }
-  }
+  // registerForPushNotificationsAsync removed
 
   return (
     <View style={styles.container}>
@@ -226,14 +210,12 @@ export default function ParcialesScreen() {
                   </View>
 
                   <View style={styles.cardInfo}>
-                    <Text style={styles.cardMateria}>{evento.materia}</Text>
-                    <Text style={styles.cardTitle}>{evento.titulo}</Text>
+                    {/* <Text style={styles.cardMateria}>{evento.materia}</Text> Materia Hidden/Removed */}
+                    <Text style={[styles.cardTitle, { fontSize: 18 }]}>{evento.titulo}</Text>
                     <Text style={styles.cardDate}>{evento.fecha} - {evento.hora}hs • {getTiempoRestante(evento.fecha)}</Text>
                   </View>
 
-                  <TouchableOpacity style={styles.bellButton} onPress={() => toggleNotificacion(evento.id)}>
-                    <Ionicons name={evento.avisar ? "notifications" : "notifications-off"} size={22} color="rgba(255,255,255,0.9)" />
-                  </TouchableOpacity>
+                  {/* Bell button removed */}
                 </View>
 
                 <TouchableOpacity style={styles.deleteButton} onPress={() => confirmarEliminacion(evento.id)}>
@@ -278,8 +260,8 @@ export default function ParcialesScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.label}>Materia</Text>
-            <TextInput style={styles.input} placeholder="Ej: FÍSICA II" value={nuevaMateria} onChangeText={setNuevaMateria} autoCapitalize="characters" />
+            {/* <Text style={styles.label}>Materia</Text>
+            <TextInput style={styles.input} placeholder="Ej: FÍSICA II" value={nuevaMateria} onChangeText={setNuevaMateria} autoCapitalize="characters" /> */}
 
             <Text style={styles.label}>Título del Evento</Text>
             <TextInput style={styles.input} placeholder={nuevoTipo === 'PARCIAL' ? "Ej: 1er Parcial" : "Ej: TP Laboratorio"} value={nuevoTitulo} onChangeText={setNuevoTitulo} autoCapitalize="characters" />

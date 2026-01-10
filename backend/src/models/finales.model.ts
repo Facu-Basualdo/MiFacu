@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from "typeorm";
 import { Materia } from "./materias.model";
+import { User } from "./user.model";
 
 @Entity('finales')
 export class Final {
@@ -24,4 +25,11 @@ export class Final {
 
     @Column({ name: 'notificado', type: 'boolean', default: false })
     notificado!: boolean;
+
+    @Column({ name: 'user_id', type: 'uuid', nullable: true })
+    userId!: string;
+
+    @ManyToOne(() => User, user => user.finales)
+    @JoinColumn({ name: "user_id" })
+    user!: User;
 }

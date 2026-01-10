@@ -1,126 +1,103 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { supabase } from '../src/config/supabase';
+import { useAuth } from '../src/context/AuthContext';
+import { DataRepository } from '../src/services/dataRepository';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [nombre, setNombre] = useState('');
+  const { isGuest, user, signInAsGuest } = useAuth();
 
-  // Verificamos si ya hay un usuario guardado
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com', // Replace with Env Var
+    iosClientId: 'YOUR_IOS_ID',
+    androidClientId: 'YOUR_ANDROID_ID',
+  });
+
   useEffect(() => {
-    chequearSesion();
-  }, []);
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
 
-  async function chequearSesion() {
-    const usuarioGuardado = await AsyncStorage.getItem('usuario_nombre');
-    if (usuarioGuardado) {
-      console.log("Usuario detectado:", usuarioGuardado);
-      // router.replace('/home'); // Descomenta esto si quieres login automático
+      const signInWithSupabase = async () => {
+        const { error } = await supabase.auth.signInWithIdToken({
+          provider: 'google',
+          token: id_token,
+        });
+
+        if (error) {
+          Alert.alert("Login Error", error.message);
+        } else {
+          // Sync data on successful login (if previously guest)
+          // This logic might need refinement: do we sync immediately or ask?
+          // For now, auto-sync.
+          await DataRepository.syncGuestData();
+        }
+      };
+
+      signInWithSupabase();
     }
-  }
+  }, [response]);
 
-  // 1. Entrar con nombre propio
-  async function ingresarConNombre() {
-    if (nombre.trim().length < 2) {
-      Alert.alert("Nombre muy corto", "Pon al menos 2 letras.");
-      return;
-    }
-    await guardarYEntrar(nombre.trim().toLowerCase());
-  }
-
-  // 2. Entrar como USUARIO DEMO (Compartido)
-  async function ingresarComoDemo() {
-    Alert.alert(
-      "Modo Tester 🧪", 
-      "Entrarás con el usuario compartido 'demo'.\nTodos los que usen este botón verán los mismos datos.",
-      [
-        { text: "Cancelar", style: "cancel" },
-        { text: "Entrar", onPress: () => guardarYEntrar('usuario_demo') } // ID FIJO
-      ]
-    );
-  }
-
-  // 3. Entrar como Invitado Random
-  async function ingresarComoInvitado() {
-    let idInvitado = await AsyncStorage.getItem('usuario_nombre');
-    if (!idInvitado || !idInvitado.startsWith('invitado_')) {
-      const numeroRandom = Math.floor(Math.random() * 10000);
-      idInvitado = `invitado_${numeroRandom}`;
-    }
-    await guardarYEntrar(idInvitado);
-  }
-
-  // Función común para guardar y navegar
-  async function guardarYEntrar(usuarioId) {
-    try {
-      await AsyncStorage.setItem('usuario_nombre', usuarioId);
+  useEffect(() => {
+    if (user || isGuest) {
       router.replace('/home');
-    } catch (e) {
-      Alert.alert("Error", "No se pudo guardar la sesión.");
     }
-  }
+  }, [user, isGuest]);
+
+  const handleGoogleLogin = async () => {
+    // promptAsync(); 
+    // Note: Setup of Google Auth requires Expo Go or Build properties.
+    // For this MVP, we might fallback to basic Supabase Auth UI or just mock the "Google" part if credentials aren't ready.
+    // But to fulfill the request "Register with Google", we'll attempt the real flow logic.
+    // If the user hasn't provided Client IDs, this will fail. 
+    // We will use supabase.auth.signInWithOAuth for a simpler flow if possible.
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: 'mifacu://login'
+      }
+    });
+
+    if (error) Alert.alert("Error", error.message);
+  };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.logo}>PLAID LABS 🚀</Text> 
-      <Text style={styles.subtitle}>miFacu Mobile</Text>
+      <Text style={styles.logo}>MiFacu 🚀</Text>
+      <Text style={styles.subtitle}>Gestiona tu vida académica</Text>
 
-      {/* --- OPCIÓN 1: USUARIO DEMO (El más importante ahora) --- */}
-      <TouchableOpacity style={styles.buttonDemo} onPress={ingresarComoDemo}>
-        <Text style={styles.demoText}>🧪 ENTRAR COMO TESTER</Text>
-        <Text style={styles.demoSubtext}>(Cuenta compartida por todos)</Text>
+      <TouchableOpacity style={styles.googleButton} onPress={handleGoogleLogin}>
+        <Text style={styles.googleText}>Continuar con Google</Text>
       </TouchableOpacity>
 
-      <Text style={{color: '#333', marginVertical: 20}}>──────── O ────────</Text>
-
-      {/* --- OPCIÓN 2: NOMBRE PROPIO --- */}
-      <View style={styles.card}>
-        <Text style={styles.label}>Tu nombre personal:</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="Ej: Matias" 
-          placeholderTextColor="#666"
-          onChangeText={setNombre}
-          value={nombre}
-          autoCapitalize="words"
-        />
-        <TouchableOpacity style={styles.buttonMain} onPress={ingresarConNombre}>
-          <Text style={styles.buttonText}>Entrar</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* --- OPCIÓN 3: INVITADO --- */}
-      <TouchableOpacity onPress={ingresarComoInvitado} style={{ marginTop: 30 }}>
-        <Text style={{ color: '#666', textDecorationLine: 'underline' }}>
-          Entrar como anónimo (Random)
-        </Text>
+      <TouchableOpacity onPress={signInAsGuest} style={styles.guestButton}>
+        <Text style={styles.guestText}>Ingresar como Invitado (Offline)</Text>
       </TouchableOpacity>
 
+      <Text style={styles.infoText}>
+        Si ingresas como invitado, tus datos se guardarán en tu dispositivo.
+        Al iniciar sesión después, se sincronizarán con tu cuenta.
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  logo: { color: '#fff', fontSize: 32, fontWeight: 'bold', marginBottom: 5 },
-  subtitle: { color: '#aaa', fontSize: 18, marginBottom: 40 },
-  
-  // Estilos del Botón Demo
-  buttonDemo: { 
-    width: '100%', padding: 15, borderRadius: 12, alignItems: 'center', 
-    backgroundColor: '#FFD700', // Dorado
-    shadowColor: "#FFD700", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 10, elevation: 5
+  logo: { color: '#fff', fontSize: 36, fontWeight: 'bold', marginBottom: 10 },
+  subtitle: { color: '#aaa', fontSize: 18, marginBottom: 50 },
+  googleButton: {
+    backgroundColor: '#fff', padding: 16, borderRadius: 12, width: '100%', alignItems: 'center', marginBottom: 20,
+    flexDirection: 'row', justifyContent: 'center'
   },
-  demoText: { color: '#000', fontWeight: 'bold', fontSize: 18 },
-  demoSubtext: { color: '#333', fontSize: 12 },
-
-  // Estilos Tarjeta
-  card: { width: '100%', backgroundColor: '#111', padding: 20, borderRadius: 16, borderWidth: 1, borderColor: '#333', marginTop: 10 },
-  label: { color: '#fff', marginBottom: 10, fontWeight: 'bold' },
-  input: {
-    backgroundColor: '#000', color: '#fff', padding: 15, borderRadius: 8, marginBottom: 15, borderWidth: 1, borderColor: '#333', fontSize: 16
-  },
-  buttonMain: { backgroundColor: '#333', padding: 15, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#555' },
-  buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  googleText: { color: '#000', fontWeight: 'bold', fontSize: 16 },
+  guestButton: { padding: 15 },
+  guestText: { color: '#888', textDecorationLine: 'underline', fontSize: 16 },
+  infoText: { color: '#555', fontSize: 12, textAlign: 'center', marginTop: 30, paddingHorizontal: 20 },
 });

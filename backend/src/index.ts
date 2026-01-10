@@ -8,6 +8,7 @@ import { errorHandler } from './middleware/errorHandler.middleware';
 import recordatoriosRoutes from './routes/recordatorios.routes';
 import finalesRoutes from './routes/finales.routes';
 import materiasRoutes from './routes/materias.routes';
+import syncRoutes from './routes/sync.routes';
 
 dotenv.config();
 
@@ -22,6 +23,7 @@ app.use(express.json());
 app.use("/materias", materiasRoutes);
 app.use("/recordatorios", recordatoriosRoutes);
 app.use("/finales", finalesRoutes);
+app.use("/sync", syncRoutes);
 
 // Health check - Endpoint raíz con mensaje visual
 app.get('/', (req, res) => {
@@ -190,7 +192,7 @@ app.get('/', (req, res) => {
 </body>
 </html>
     `;
-    
+
     res.send(htmlResponse);
 });
 

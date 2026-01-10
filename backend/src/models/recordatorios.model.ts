@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from "typeorm";
 import { TipoRecordatorio } from '../types/recordatorios';
 import { Materia } from './materias.model';
+import { User } from './user.model';
 
 @Entity('recordatorios')
 export class Recordatorio {
@@ -31,5 +32,12 @@ export class Recordatorio {
     @ManyToOne(() => Materia, (materia) => materia.recordatorios)
     @JoinColumn({ name: "materia_id" })
     materia!: Materia;
+
+    @Column({ name: 'user_id', type: 'uuid', nullable: true })
+    userId!: string;
+
+    @ManyToOne(() => User, user => user.recordatorios)
+    @JoinColumn({ name: "user_id" })
+    user!: User;
 }
 
