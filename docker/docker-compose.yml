@@ -22,32 +22,6 @@ services:
       retries: 3
       start_period: 40s
 
-  # Base de datos PostgreSQL (opcional - solo si no usas Supabase)
-  # Descomenta si quieres usar una base de datos local en lugar de Supabase
-  # postgres:
-  #   image: postgres:15-alpine
-  #   container_name: mifacu-postgres
-  #   environment:
-  #     - POSTGRES_USER=${POSTGRES_USER:-mifacu}
-  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mifacu123}
-  #     - POSTGRES_DB=${POSTGRES_DB:-mifacu}
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   networks:
-  #     - mifacu-network
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U mifacu"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-
 networks:
   mifacu-network:
     driver: bridge
-
-# Volúmenes (solo si usas PostgreSQL local)
-# volumes:
-#   postgres_data:

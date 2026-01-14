@@ -124,17 +124,22 @@ export default function HomeScreen() {
     try {
       setAddingTask(true);
       const taskData = {
-        titulo: newTask.trim(),
+        nombre: newTask.trim(), // Backend requires 'nombre'
         descripcion: 'Tarea Rápida',
         fecha: new Date().toISOString(),
         tipo: 'quick_task'
       };
 
+      console.log('🚀 [Home] Intentando crear tarea:', { isGuest, taskData }); // DEBUG LOG
+
       const created = await DataRepository.createRecordatorio(isGuest, taskData);
+      console.log('✅ [Home] Tarea creada respuesta:', created); // DEBUG LOG
+
       setTasks(prev => [...prev, created]);
       setNewTask('');
       Keyboard.dismiss();
     } catch (error) {
+      console.error('❌ [Home] Error creando tarea:', error); // DEBUG LOG
       Alert.alert('Error', 'No se pudo agregar la tarea');
     } finally {
       setAddingTask(false);
@@ -536,7 +541,7 @@ const TaskItem = ({ task, onComplete, theme, separatorColor }: any) => {
           styles.taskText,
           { color: isCompleting ? theme.icon : theme.text, textDecorationLine: isCompleting ? 'line-through' : 'none' }
         ]}>
-          {task.titulo}
+          {task.nombre || task.titulo}
         </Text>
       </View>
     </Animated.View>

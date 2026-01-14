@@ -35,28 +35,34 @@ export class RecordatoriosService {
 
     async createRecordatorio(data: {
         nombre: string;
-        materiaNombre: string;
+        materiaNombre?: string;
         tipo: TipoRecordatorio;
-        fecha: Date | string;
-        hora: string;
-        color: string;
+        fecha?: Date | string;
+        hora?: string;
+        color?: string;
+        descripcion?: string;
+        userId?: string; // Add userId validation if needed
     }): Promise<Recordatorio> {
-        const { nombre, materiaNombre, tipo, fecha, hora, color } = data;
+        const { nombre, materiaNombre, tipo, fecha, hora, color, descripcion } = data;
 
-        const materia = await this.materiasService.findOrCreateMateria(materiaNombre);
+        let materia = null;
+        if (materiaNombre) {
+            materia = await this.materiasService.findOrCreateMateria(materiaNombre);
+        }
 
         // Convertir fecha string a Date si es necesario
-        const fechaDate = typeof fecha === 'string' ? new Date(fecha) : fecha;
+        const fechaDate = fecha ? (typeof fecha === 'string' ? new Date(fecha) : fecha) : null;
 
         const recordatorio = this.recordatorioRepository.create({
             nombre,
-            materiaId: materia.id,
+            materiaId: materia ? materia.id : null,
             tipo,
             fecha: fechaDate,
-            hora,
-            color,
+            hora: hora || null,
+            color: color || '#FFD700', // Default color for quick tasks
             notificado: false,
-            materia,
+            materia: materia,
+            descripcion: descripcion || ''
         });
 
         return await this.recordatorioRepository.save(recordatorio);

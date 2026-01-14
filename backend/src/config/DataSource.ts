@@ -11,7 +11,7 @@ dotenv.config();
 export const AppDataSource = new DataSource({
     type: "postgres",
     url: process.env.DATABASE_URL,
-    synchronize: true, // Activado temporalmente para crear tablas nuevas
+    synchronize: false, // Desactivado para evitar errores de duplicación de Enums y conflictos con migraciones manuales
     // Usa migraciones o el script de seed para actualizar el esquema
     logging: process.env.NODE_ENV === 'development',
     entities: [Materia, Recordatorio, Final, UsuarioMateria, User],
