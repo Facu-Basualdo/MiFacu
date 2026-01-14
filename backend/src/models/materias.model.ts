@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToMany, JoinTable } from "typeorm";
 import { Recordatorio } from "./recordatorios.model";
 import { Final } from "./finales.model";
+import { UsuarioMateria } from "./usuario-materias.model";
 import { Duración } from '../types/materias';
 
 @Entity('materias')
@@ -14,8 +15,8 @@ export class Materia {
     @Column({ name: 'nivel', type: 'varchar', length: 10, nullable: true })
     nivel!: string; // I, II, III, IV, V
 
-    @Column({ name: 'nombre', type: 'varchar', length: 150, unique: true })
-    nombre!: string;
+    @Column({ name: 'nombre', type: 'varchar', length: 150, unique: true, nullable: true })
+    nombre?: string;
 
     @Column({ name: 'duración', type: 'enum', enum: Duración, nullable: true })
     duracion!: Duración;
@@ -25,6 +26,9 @@ export class Materia {
 
     @OneToMany(() => Final, (final) => final.materia)
     finales!: Final[];
+
+    @OneToMany(() => UsuarioMateria, (usuarioMateria) => usuarioMateria.materia)
+    usuarioMaterias!: UsuarioMateria[];
 
     // Relación para correlativas (Materias que debo tener para cursar esta)
     @ManyToMany(() => Materia)

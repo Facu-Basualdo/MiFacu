@@ -3,15 +3,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-// Intenta importar la DB. Si falla, usaremos un array vacío para que no explote.
-let getMaterias = () => [];
-try {
-  const db = require('../src/data/db'); // Importación segura
-  getMaterias = db.getMaterias;
-  console.log("✅ DB cargada correctamente");
-} catch (e) {
-  console.log("❌ Error cargando DB:", e);
-}
+import { materiasApi as api } from '../src/services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Interfaces
 interface Materia {
@@ -38,55 +31,58 @@ const DIAS_SEMANA: { [key: string]: string } = {
 export default function AgendaScreen() {
   const router = useRouter();
   const [materias, setMaterias] = useState<Materia[]>([]);
-  const [errorDb, setErrorDb] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(
     React.useCallback(() => {
-      try {
-        const todas = getMaterias();
-        console.log("Materias encontradas:", todas?.length || 0);
-
-        if (!todas || todas.length === 0) {
-          console.log("⚠️ No se encontraron materias en la DB");
-          setMaterias([]);
-        } else {
-          const cursando = todas.filter((m: any) => m.estado === 'cursando');
-          console.log("Materias cursando:", cursando.length);
-          setMaterias(cursando);
-        }
-        setLoading(false);
-      } catch (error) {
-        console.error("Error cargando datos:", error);
-        setErrorDb(true);
-        setLoading(false);
-      }
+      cargarDatos();
     }, [])
   );
 
-  // Si hay error de DB, mostrar mensaje claro
-  if (errorDb) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <Ionicons name="warning" size={50} color="#ff6b6b" />
-        <Text style={{fontSize: 18, color: '#666', textAlign: 'center', marginTop: 20}}>
-          Error: No se encuentra el archivo{'\n'}src/data/db.js
-        </Text>
-        <TouchableOpacity
-          style={{marginTop: 20, padding: 10, backgroundColor: '#2E5EC9', borderRadius: 8}}
-          onPress={() => router.back()}
-        >
-          <Text style={{color: '#fff', fontWeight: 'bold'}}>Volver</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const cargarDatos = async () => {
+    try {
+      setLoading(true);
+      const userId = await AsyncStorage.getItem('usuario_nombre');
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+
+      const todas: any = await api.getMateriasByUsuario(userId);
+      console.log("Materias encontradas:", todas?.length || 0);
+
+      if (!todas || todas.length === 0) {
+        setMaterias([]);
+      } else {
+        // En el backend, todas tiene formato [{materia: {...}, estado: '...'}]
+        // Mapeamos al formato que espera la pantalla
+        const formateadas = todas
+          .filter((item: any) => item.estado === 'cursado')
+          .map((item: any) => ({
+            id: item.materia.id,
+            nombre: item.materia.nombre,
+            nivel: item.materia.nivel,
+            estado: item.estado,
+            dia: item.materia.dia || 'LU', // Fallback por si no viene el día del backend
+            hora: item.materia.hora || 8,
+            duracion: item.materia.duracion || 2,
+            aula: item.materia.aula || 'Aula'
+          }));
+
+        setMaterias(formateadas);
+      }
+    } catch (error) {
+      console.error("Error cargando datos de agenda:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Si está cargando, mostrar indicador
   if (loading) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <Text style={{fontSize: 16, color: '#666'}}>Cargando horarios...</Text>
+        <Text style={{ fontSize: 16, color: '#666' }}>Cargando horarios...</Text>
       </View>
     );
   }
@@ -147,7 +143,7 @@ export default function AgendaScreen() {
           <Text style={styles.materiaHora}>
             {materia.hora}:00 - {materia.hora + (materia.duracion || 2)}:00
           </Text>
-          <Ionicons name="location-outline" size={14} color="#666" style={{marginLeft: 10}} />
+          <Ionicons name="location-outline" size={14} color="#666" style={{ marginLeft: 10 }} />
           <Text style={styles.materiaAula} numberOfLines={1}>
             {materia.aula}
           </Text>

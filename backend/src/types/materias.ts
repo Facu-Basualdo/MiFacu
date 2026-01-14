@@ -4,6 +4,13 @@ export enum Duración {
     Cuatrimestral2 = 'Segundo Cuatrimestre',
 }
 
+export enum EstadoMateriaUsuario {
+    NoCursado = 'no_cursado',
+    Cursado = 'cursado',
+    Regular = 'regular',
+    Aprobado = 'aprobado',
+}
+
 // Interfaces 
 export interface IMateria {
     id: number;

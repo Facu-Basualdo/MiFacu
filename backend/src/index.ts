@@ -8,6 +8,7 @@ import { errorHandler } from './middleware/errorHandler.middleware';
 import recordatoriosRoutes from './routes/recordatorios.routes';
 import finalesRoutes from './routes/finales.routes';
 import materiasRoutes from './routes/materias.routes';
+import usuarioMateriasRoutes from './routes/usuario-materias.routes';
 import syncRoutes from './routes/sync.routes';
 
 dotenv.config();
@@ -16,13 +17,17 @@ const app = express();
 const port = process.env.PORT || 4000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: true, // Permite todas las IPs
+    credentials: true
+}));
 app.use(express.json());
 
 // Routes
 app.use("/materias", materiasRoutes);
 app.use("/recordatorios", recordatoriosRoutes);
 app.use("/finales", finalesRoutes);
+app.use("/usuario-materias", usuarioMateriasRoutes);
 app.use("/sync", syncRoutes);
 
 // Health check - Endpoint raíz con mensaje visual
@@ -182,6 +187,11 @@ app.get('/', (req, res) => {
             <div class="endpoint-item">POST /recordatorios - Crear recordatorio</div>
             <div class="endpoint-item">GET /finales - Listar finales</div>
             <div class="endpoint-item">POST /finales - Crear final</div>
+            <div class="endpoint-item">GET /usuario-materias/:usuarioId - Materias del usuario</div>
+            <div class="endpoint-item">POST /usuario-materias/:usuarioId - Agregar materia</div>
+            <div class="endpoint-item">PUT /usuario-materias/:usuarioId/:materiaId - Actualizar estado</div>
+            <div class="endpoint-item">DELETE /usuario-materias/:usuarioId/:materiaId - Eliminar materia</div>
+            <div class="endpoint-item">GET /usuario-materias/:usuarioId/disponibles - Materias disponibles</div>
         </div>
 
         <div class="footer">
@@ -227,6 +237,11 @@ const startServer = async () => {
             console.log(`    - POST http://localhost:${port}/recordatorios - Crear recordatorio`);
             console.log(`    - GET  http://localhost:${port}/finales - Listar finales`);
             console.log(`    - POST http://localhost:${port}/finales - Crear final`);
+            console.log(`    - GET  http://localhost:${port}/usuario-materias/:usuarioId - Materias del usuario`);
+            console.log(`    - POST http://localhost:${port}/usuario-materias/:usuarioId - Agregar materia`);
+            console.log(`    - PUT  http://localhost:${port}/usuario-materias/:usuarioId/:materiaId - Actualizar estado`);
+            console.log(`    - DEL  http://localhost:${port}/usuario-materias/:usuarioId/:materiaId - Eliminar materia`);
+            console.log(`    - GET  http://localhost:${port}/usuario-materias/:usuarioId/disponibles - Materias disponibles`);
             console.log('='.repeat(60) + '\n');
         });
     } catch (error: any) {
