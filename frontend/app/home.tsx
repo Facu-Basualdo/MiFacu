@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   Dimensions,
   Image,
@@ -16,13 +16,17 @@ import {
   Pressable,
   ActivityIndicator,
   Modal,
-  TouchableWithoutFeedback
+  TouchableWithoutFeedback,
+  Alert,
+  Keyboard,
+  Animated
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../src/constants/theme';
 import { useThemeColor } from '../src/hooks/use-theme-color';
 import { useAuth } from '../src/context/AuthContext';
 import { materiasApi } from '../src/services/api';
+import { DataRepository } from '../src/services/dataRepository';
 
 const { width } = Dimensions.get('window');
 
@@ -34,6 +38,11 @@ export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [carreraProgreso, setCarreraProgreso] = useState(0);
+
+  // Estados para Quick Tasks
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [newTask, setNewTask] = useState('');
+  const [addingTask, setAddingTask] = useState(false);
 
   // Estados para el Modal de Estadísticas
   const [statsModalVisible, setStatsModalVisible] = useState(false);
@@ -67,6 +76,10 @@ export default function HomeScreen() {
       if (!userId && user) {
         userId = user.id;
       }
+
+      // Cargar Recordatorios (Quick Tasks)
+      const recordatorios = await DataRepository.getRecordatorios(isGuest);
+      setTasks(recordatorios || []);
 
       if (userId) {
         // 1. Obtener materias del usuario
@@ -102,6 +115,41 @@ export default function HomeScreen() {
       console.error("Error cargando progreso:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAddTask = async () => {
+    if (!newTask.trim()) return;
+
+    try {
+      setAddingTask(true);
+      const taskData = {
+        titulo: newTask.trim(),
+        descripcion: 'Tarea Rápida',
+        fecha: new Date().toISOString(),
+        tipo: 'quick_task'
+      };
+
+      const created = await DataRepository.createRecordatorio(isGuest, taskData);
+      setTasks(prev => [...prev, created]);
+      setNewTask('');
+      Keyboard.dismiss();
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo agregar la tarea');
+    } finally {
+      setAddingTask(false);
+    }
+  };
+
+  const handleCompleteTask = async (id: number) => {
+    try {
+      // Optimistic update: remove immediately from UI
+      setTasks(prev => prev.filter(t => t.id !== id));
+      await DataRepository.deleteRecordatorio(isGuest, id);
+    } catch (error) {
+      console.error("Error deleting task:", error);
+      // Re-fetch if fails
+      loadData();
     }
   };
 
@@ -209,6 +257,49 @@ export default function HomeScreen() {
               </View>
             </View>
           </Pressable>
+        </View>
+
+        {/* SECCIÓN: TAREAS RÁPIDAS (NUEVO) */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.icon }]}>TAREAS RÁPIDAS</Text>
+          <View style={[styles.tasksContainer, { backgroundColor: cardColor, borderColor: separatorColor }]}>
+            {/* Input Row */}
+            <View style={[styles.taskInputRow, { borderBottomColor: separatorColor }]}>
+              <TextInput
+                placeholder="Agregar nueva tarea..."
+                placeholderTextColor={theme.icon}
+                style={[styles.taskInput, { color: theme.text }]}
+                value={newTask}
+                onChangeText={setNewTask}
+                onSubmitEditing={handleAddTask}
+                returnKeyType="done"
+              />
+              <TouchableOpacity
+                onPress={handleAddTask}
+                disabled={addingTask || !newTask.trim()}
+                style={[styles.addTaskButton, { backgroundColor: newTask.trim() ? theme.tint : theme.separator }]}
+              >
+                <Ionicons name="add" size={20} color="white" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Tasks List */}
+            {tasks.length === 0 ? (
+              <View style={styles.emptyTasks}>
+                <Text style={[styles.emptyTasksText, { color: theme.icon }]}>No hay tareas pendientes</Text>
+              </View>
+            ) : (
+              tasks.map((task: any) => (
+                <TaskItem
+                  key={task.id}
+                  task={task}
+                  onComplete={handleCompleteTask}
+                  theme={theme}
+                  separatorColor={separatorColor}
+                />
+              ))
+            )}
+          </View>
         </View>
 
         {/* SECCIÓN: ACCIONES RÁPIDAS */}
@@ -367,7 +458,8 @@ export default function HomeScreen() {
   );
 }
 
-// COMPONENTE: TARJETA DE PRIORIDAD CON PRESSABLE
+// ... Componentes auxiliares (PriorityCard, TableRow, StatItem) ...
+
 const PriorityCard = ({ icon, label, subtitle, color, onPress, theme, cardColor }: any) => (
   <Pressable
     onPress={onPress}
@@ -384,7 +476,6 @@ const PriorityCard = ({ icon, label, subtitle, color, onPress, theme, cardColor 
   </Pressable>
 );
 
-// COMPONENTE: FILA DE TABLA
 const TableRow = ({ icon, label, color, onPress, isLast, theme }: any) => (
   <Pressable
     onPress={onPress}
@@ -410,6 +501,47 @@ const StatItem = ({ number, label, color, theme, iconName }: any) => (
     <Text style={[styles.statLabelItem, { color: theme.icon }]}>{label}</Text>
   </View>
 );
+
+const TaskItem = ({ task, onComplete, theme, separatorColor }: any) => {
+  const [isCompleting, setIsCompleting] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePress = () => {
+    if (isCompleting) return;
+    setIsCompleting(true);
+    // Animate fade out and strikethrough effect
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 300,
+      delay: 500, // Wait a bit so user sees the check and strikethrough
+      useNativeDriver: true,
+    }).start(() => {
+      onComplete(task.id);
+    });
+  };
+
+  return (
+    <Animated.View style={{ opacity: fadeAnim }}>
+      <View style={[styles.taskItem, { borderBottomColor: separatorColor }]}>
+        <TouchableOpacity onPress={handlePress} style={styles.taskCheckbox}>
+          {isCompleting ? (
+            <View style={[styles.checkboxCircle, { backgroundColor: theme.green, borderColor: theme.green, alignItems: 'center', justifyContent: 'center' }]}>
+              <Ionicons name="checkmark" size={14} color="white" />
+            </View>
+          ) : (
+            <View style={[styles.checkboxCircle, { borderColor: theme.tint }]} />
+          )}
+        </TouchableOpacity>
+        <Text style={[
+          styles.taskText,
+          { color: isCompleting ? theme.icon : theme.text, textDecorationLine: isCompleting ? 'line-through' : 'none' }
+        ]}>
+          {task.titulo}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+};
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -440,6 +572,18 @@ const styles = StyleSheet.create({
   widgetFooter: { flexDirection: 'row', alignItems: 'center' },
   widgetInfoItem: { flexDirection: 'row', alignItems: 'center', marginRight: 20 },
   widgetInfoText: { color: 'white', fontSize: 12, fontWeight: '600', marginLeft: 6, opacity: 0.9 },
+  // Quick Tasks Styles
+  tasksContainer: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  taskInputRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  taskInput: { flex: 1, fontSize: 16, marginRight: 10 },
+  addTaskButton: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  emptyTasks: { padding: 20, alignItems: 'center' },
+  emptyTasksText: { fontSize: 14, fontStyle: 'italic', opacity: 0.7 },
+  taskItem: { flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  taskCheckbox: { marginRight: 12 },
+  checkboxCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2 },
+  taskText: { fontSize: 16, fontWeight: '500' },
+
   priorityGrid: { flexDirection: 'row', justifyContent: 'space-between' },
   priorityCard: { flex: 1, marginHorizontal: 5, padding: 16, borderRadius: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
   priorityIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
