@@ -3,7 +3,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { ActivityIndicator, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getMaterias } from '../src/data/db';
+import { materiasApi } from '../src/services/api';
+import { useAuth } from '../src/context/AuthContext';
 
 // Interfaces
 interface Materia {
@@ -21,14 +22,37 @@ export default function PlanEstudiosScreen() {
   const router = useRouter();
   const [materias, setMaterias] = useState<Materia[]>([]);
   const [loading, setLoading] = useState(true);
+  const { isGuest, user } = useAuth();
+
+  const loadMaterias = async () => {
+    try {
+      setLoading(true);
+      const data = await materiasApi.getMateriasByUsuario(user?.id);
+
+      // Mapear el formato del backend al que espera el componente
+      const mapped = data.map((um: any) => ({
+        id: um.materiaId,
+        nombre: um.materia.nombre,
+        nivel: parseInt(um.materia.nivel) || 1,
+        estado: um.estado,
+        dia: um.dia,
+        hora: um.hora,
+        aula: um.aula
+      }));
+
+      setMaterias(mapped);
+    } catch (e) {
+      console.error("Error cargando materias:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Recargar datos al volver a la pantalla
   useFocusEffect(
     React.useCallback(() => {
-      const todas = getMaterias();
-      setMaterias(todas);
-      setLoading(false);
-    }, [])
+      loadMaterias();
+    }, [isGuest])
   );
 
   const toggleMateria = (materia: Materia) => {

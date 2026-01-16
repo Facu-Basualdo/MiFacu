@@ -89,5 +89,24 @@ export const materiasApi = {
     }
 };
 
+export const linksApi = {
+    getLinks: async () => {
+        const response = await api.get('/links');
+        return response.data.data || response.data;
+    },
+    createLink: async (data) => {
+        const response = await api.post('/links', data);
+        return response.data.data || response.data;
+    },
+    updateLink: async (id, data) => {
+        const response = await api.put(`/links/${id}`, data);
+        return response.data.data || response.data;
+    },
+    deleteLink: async (id) => {
+        await api.delete(`/links/${id}`);
+        return true;
+    }
+};
+
 // Exportar objeto api por defecto o como nombrado
 export default api;

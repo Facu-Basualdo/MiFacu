@@ -61,14 +61,14 @@ export default function AgendaScreen() {
         const formateadas = todas
           .filter((item: any) => item.estado === 'cursado')
           .map((item: any) => ({
-            id: item.materia.id,
+            id: item.materiaId,
             nombre: item.materia.nombre,
-            nivel: item.materia.nivel,
+            nivel: parseInt(item.materia.nivel) || 1,
             estado: item.estado,
-            dia: item.materia.dia || 'LU', // Fallback por si no viene el día del backend
-            hora: item.materia.hora || 8,
-            duracion: item.materia.duracion || 2,
-            aula: item.materia.aula || 'Aula'
+            dia: item.dia || 'LU',
+            hora: item.hora || 8,
+            duracion: item.duracion || 2,
+            aula: item.aula || 'Aula'
           }));
 
         setMaterias(formateadas);

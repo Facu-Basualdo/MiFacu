@@ -24,6 +24,8 @@ import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '../src/constants/theme';
+import { DataRepository } from '../src/services/dataRepository';
+import { useAuth } from '../src/context/AuthContext';
 
 const { width } = Dimensions.get('window');
 
@@ -45,15 +47,31 @@ export default function RepositorioScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
 
-  const [links, setLinks] = useState<LinkItem[]>([
-    { id: 1, nombre: "Drive Comisión 2K1", materia: "ANÁLISIS II", url: "https://drive.google.com", color: Colors.light.blue },
-    { id: 2, nombre: "Apuntes Teóricos", materia: "FÍSICA I", url: "https://drive.google.com", color: Colors.light.orange },
-  ]);
+  const { isGuest } = useAuth();
+
+  const [links, setLinks] = useState<LinkItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [modalClosing, setModalClosing] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const data = await DataRepository.getLinks(isGuest);
+      setLinks(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    loadData();
+  }, [isGuest]);
 
   // Animated values for Modal
   const modalSheetAnim = useRef(new Animated.Value(Dimensions.get('window').height)).current;
@@ -182,7 +200,7 @@ export default function RepositorioScreen() {
     });
   };
 
-  const handleGuardar = () => {
+  const handleGuardar = async () => {
     if (!nuevoNombre || !nuevaUrl) {
       triggerHaptic('medium');
       return Alert.alert("Faltan datos", "El nombre y la URL son obligatorios.");
@@ -193,24 +211,28 @@ export default function RepositorioScreen() {
       urlFinal = 'https://' + urlFinal;
     }
 
-    if (editandoId) {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setLinks(links.map(l => l.id === editandoId ? { ...l, nombre: nuevoNombre, materia: nuevaMateria.toUpperCase(), url: urlFinal } : l));
-      triggerHaptic('success');
-    } else {
-      const nuevo: LinkItem = {
-        id: Date.now(),
-        nombre: nuevoNombre,
-        materia: nuevaMateria.toUpperCase() || "GENERAL",
-        url: urlFinal,
-        color: theme.blue
-      };
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
-      setLinks([nuevo, ...links]);
-      triggerHaptic('success');
+    try {
+      if (editandoId) {
+        await DataRepository.updateLink(isGuest, editandoId, {
+          nombre: nuevoNombre,
+          materia: nuevaMateria.toUpperCase(),
+          url: urlFinal
+        });
+        triggerHaptic('success');
+      } else {
+        await DataRepository.createLink(isGuest, {
+          nombre: nuevoNombre,
+          materia: nuevaMateria.toUpperCase() || "GENERAL",
+          url: urlFinal,
+          color: theme.blue
+        });
+        triggerHaptic('success');
+      }
+      loadData();
+      cerrarModal();
+    } catch (error) {
+      Alert.alert("Error", "No se pudo guardar el link.");
     }
-
-    cerrarModal();
   };
 
   const eliminarLink = (id: number) => {
@@ -220,10 +242,14 @@ export default function RepositorioScreen() {
       {
         text: "Borrar",
         style: "destructive",
-        onPress: () => {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setLinks(links.filter(l => l.id !== id));
-          triggerHaptic('success');
+        onPress: async () => {
+          try {
+            await DataRepository.deleteLink(isGuest, id);
+            loadData();
+            triggerHaptic('success');
+          } catch (error) {
+            Alert.alert("Error", "No se pudo eliminar el link.");
+          }
         }
       }
     ]);

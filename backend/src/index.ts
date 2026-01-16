@@ -12,6 +12,7 @@ import finalesRoutes from './routes/finales.routes';
 import materiasRoutes from './routes/materias.routes';
 import usuarioMateriasRoutes from './routes/usuario-materias.routes';
 import syncRoutes from './routes/sync.routes';
+import linksRoutes from './routes/links.routes';
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -30,6 +31,7 @@ app.use("/recordatorios", recordatoriosRoutes);
 app.use("/finales", finalesRoutes);
 app.use("/usuario-materias", usuarioMateriasRoutes);
 app.use("/sync", syncRoutes);
+app.use("/links", linksRoutes);
 
 app.get('/', (req, res) => {
     res.status(200).send('MiFacu Backend is running');

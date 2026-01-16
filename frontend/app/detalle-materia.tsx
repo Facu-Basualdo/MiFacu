@@ -3,7 +3,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getMateriaById, updateMateria } from '../src/data/db'; // Importamos DB
+import { materiasApi } from '../src/services/api';
+import { useAuth } from '../src/context/AuthContext';
 
 interface Materia {
   id: number;
@@ -20,7 +21,9 @@ export default function DetalleMateriaScreen() {
   const params = useLocalSearchParams();
   const { id } = params as { id: string };
 
+  const { isGuest, user } = useAuth();
   const [materia, setMateria] = useState<Materia | null>(null);
+  const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
 
   // Estados para edición
@@ -28,41 +31,72 @@ export default function DetalleMateriaScreen() {
   const [nuevaHora, setNuevaHora] = useState('');
   const [nuevaAula, setNuevaAula] = useState('');
 
-  useEffect(() => {
-    // Buscar datos reales en la DB
-    if (id) {
-      const data = getMateriaById(id);
-      if (data) {
-        setMateria(data);
+  const loadMateria = async () => {
+    if (!id) return;
+    try {
+      setLoading(true);
+      const data = await materiasApi.getMateriasByUsuario(user?.id);
+      const item = data.find((um: any) => um.materiaId.toString() === id.toString());
+
+      if (item) {
+        setMateria({
+          id: item.materiaId,
+          nombre: item.materia.nombre,
+          nivel: parseInt(item.materia.nivel) || 1,
+          estado: item.estado,
+          dia: item.dia,
+          hora: item.hora,
+          aula: item.aula
+        });
         // Inicializar formulario
-        setNuevoDia(data.dia || 'LU');
-        setNuevaHora(data.hora?.toString() || '18');
-        setNuevaAula(data.aula || 'Sin aula');
+        setNuevoDia(item.dia || 'LU');
+        setNuevaHora(item.hora?.toString() || '18');
+        setNuevaAula(item.aula || 'Sin aula');
       }
+    } catch (e) {
+      console.error("Error cargando materia:", e);
+    } finally {
+      setLoading(false);
     }
-  }, [id]);
-
-  const handleGuardar = () => {
-    // Validar hora
-    const horaNum = parseInt(nuevaHora);
-    if (horaNum < 8 || horaNum > 23) return Alert.alert("Hora inválida", "La facultad abre de 8 a 23.");
-
-    // Guardar en DB
-    updateMateria(id, {
-      dia: nuevoDia.toUpperCase(),
-      hora: horaNum,
-      aula: nuevaAula
-    });
-
-    // Actualizar vista local
-    if (materia) {
-      setMateria({ ...materia, dia: nuevoDia.toUpperCase(), hora: horaNum, aula: nuevaAula });
-    }
-    setEditMode(false);
-    Alert.alert("¡Horario Actualizado!", "Se reflejará en tu agenda.");
   };
 
-  if (!materia) return <View style={styles.container}><Text>Cargando...</Text></View>;
+  useEffect(() => {
+    loadMateria();
+  }, [id, isGuest]);
+
+  const handleGuardar = async () => {
+    // Validar hora
+    const horaNum = parseInt(nuevaHora);
+    if (isNaN(horaNum) || horaNum < 8 || horaNum > 23) return Alert.alert("Hora inválida", "La facultad abre de 8 a 23.");
+
+    try {
+      if (materia) {
+        await materiasApi.updateEstadoMateria(user?.id, id, materia.estado, {
+          dia: nuevoDia.toUpperCase(),
+          hora: horaNum,
+          aula: nuevaAula
+        });
+
+        Alert.alert("¡Horario Actualizado!", "Se reflejará en tu agenda.");
+        loadMateria(); // Recargar datos
+        setEditMode(false);
+      }
+    } catch (error) {
+      Alert.alert("Error", "No se pudo actualizar el horario.");
+    }
+  };
+
+  if (loading) return (
+    <View style={[styles.container, { justifyContent: 'center' }]}>
+      <ActivityIndicator size="large" color="#2E5EC9" />
+    </View>
+  );
+
+  if (!materia) return (
+    <View style={styles.container}>
+      <Text style={{ textAlign: 'center', marginTop: 50 }}>Materia no encontrada</Text>
+    </View>
+  );
 
   const colorTema = materia.estado === 'aprobada' ? '#4CAF50' : '#2E5EC9';
 
