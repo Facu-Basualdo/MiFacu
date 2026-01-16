@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Dimensions,
   Image,
@@ -21,6 +21,7 @@ import {
   Animated
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Circle, G } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../src/constants/theme';
@@ -46,6 +47,7 @@ export default function HomeScreen() {
 
   // Estados para el Modal de Estadísticas
   const [statsModalVisible, setStatsModalVisible] = useState(false);
+  const [privacyMode, setPrivacyMode] = useState(false); // Estado Modo Privado
   const [stats, setStats] = useState({
     aprobadas: 0,
     cursando: 0,
@@ -66,12 +68,64 @@ export default function HomeScreen() {
   const notificationAnim = useRef(new Animated.Value(-100)).current;
   const notificationOpacity = useRef(new Animated.Value(0)).current;
 
+  // Animaciones Sheet Estadísticas
+  const statsSheetAnim = useRef(new Animated.Value(Dimensions.get('window').height)).current;
+  const statsOverlayOpacity = useRef(new Animated.Value(0)).current;
+
+  const openStats = () => {
+    setStatsModalVisible(true);
+    Animated.parallel([
+      Animated.timing(statsOverlayOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.spring(statsSheetAnim, {
+        toValue: 0,
+        useNativeDriver: true,
+        damping: 15,
+        stiffness: 100,
+        mass: 0.8,
+      }),
+    ]).start();
+  };
+
+  const closeStats = () => {
+    Animated.parallel([
+      Animated.timing(statsOverlayOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(statsSheetAnim, {
+        toValue: Dimensions.get('window').height,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setStatsModalVisible(false));
+  };
+
   // Cargar datos reales
   useFocusEffect(
     useCallback(() => {
       loadData();
+      checkPrivacyMode();
     }, [user, isGuest])
   );
+
+  const checkPrivacyMode = async () => {
+    try {
+      const mode = await AsyncStorage.getItem('privacy_mode');
+      if (mode === 'true') setPrivacyMode(true);
+    } catch (e) { }
+  };
+
+  const togglePrivacyMode = async () => {
+    const newVal = !privacyMode;
+    setPrivacyMode(newVal);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await AsyncStorage.setItem('privacy_mode', String(newVal));
+  };
 
   const loadData = async () => {
     try {
@@ -296,16 +350,44 @@ export default function HomeScreen() {
 
             {/* BARRA DE PROGRESO DE CARRERA */}
             <View style={styles.progressSection}>
-              <Pressable onPress={() => setStatsModalVisible(true)}>
+              <Pressable onPress={openStats}>
                 <View style={styles.progressInfo}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center' }}
+                    onPress={togglePrivacyMode}
+                    activeOpacity={0.6}
+                  >
                     <Text style={[styles.progressText, { color: theme.icon }]}>Progreso de Carrera</Text>
-                    <Ionicons name="information-circle-outline" size={14} color={theme.icon} style={{ marginLeft: 4, opacity: 0.7 }} />
-                  </View>
-                  <Text style={[styles.progressPercentage, { color: theme.tint }]}>{carreraProgreso}%</Text>
+                    <Ionicons
+                      name={privacyMode ? "eye-off-outline" : "eye-outline"}
+                      size={16}
+                      color={theme.icon}
+                      style={{ marginLeft: 6, opacity: 0.8 }}
+                    />
+                  </TouchableOpacity>
+
+                  <Text style={[styles.progressPercentage, { color: privacyMode ? theme.icon : theme.tint }]}>
+                    {privacyMode ? "•••" : `${carreraProgreso}%`}
+                  </Text>
                 </View>
                 <View style={[styles.progressBarBg, { backgroundColor: theme.separator + '40' }]}>
-                  <View style={[styles.progressBarFill, { width: `${carreraProgreso}%`, backgroundColor: theme.tint }]} />
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      {
+                        width: privacyMode ? '0%' : `${carreraProgreso}%`,
+                        backgroundColor: theme.tint,
+                        opacity: privacyMode ? 0 : 1
+                      }
+                    ]}
+                  />
+                  {privacyMode && (
+                    <View style={[StyleSheet.absoluteFill, {
+                      backgroundColor: theme.separator,
+                      borderRadius: 3,
+                      opacity: 0.2
+                    }]} />
+                  )}
                 </View>
               </Pressable>
             </View>
@@ -483,85 +565,167 @@ export default function HomeScreen() {
 
       {/* MODAL / SHEET DE ESTADÍSTICAS */}
       <Modal
-        animationType="slide"
+        animationType="none" // Controlado por Animated
         transparent={true}
         visible={statsModalVisible}
-        onRequestClose={() => setStatsModalVisible(false)}
+        onRequestClose={closeStats}
       >
-        <TouchableWithoutFeedback onPress={() => setStatsModalVisible(false)}>
-          <View style={styles.modalOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={[styles.modalContent, { backgroundColor: cardColor }]}>
-                {/* Handle Bar */}
-                <View style={[styles.modalHandle, { backgroundColor: theme.separator }]} />
-
-                <View style={styles.modalHeader}>
-                  <Text style={[styles.modalTitle, { color: theme.text }]}>Estado Académico</Text>
-                  <TouchableOpacity onPress={() => setStatsModalVisible(false)} style={styles.closeButton}>
-                    <Ionicons name="close-circle" size={24} color={theme.icon} />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Resumen Principal */}
-                <View style={styles.statsSummary}>
-                  <View style={styles.statsCircleContainer}>
-                    <Text style={[styles.statsBigNumber, { color: theme.text }]}>{stats.aprobadas}</Text>
-                    <Text style={[styles.statsLabel, { color: theme.icon }]}>Aprobadas</Text>
-                    <Text style={[styles.statsTotal, { color: theme.icon }]}>de {stats.totalPlan} materias</Text>
-                  </View>
-                </View>
-
-                {/* Desgloze de Estados */}
-                <View style={styles.statsGrid}>
-                  <StatItem
-                    iconName="school"
-                    number={stats.cursando}
-                    label="Cursando"
-                    color={theme.blue}
-                    theme={theme}
-                  />
-                  <StatItem
-                    iconName="checkbox"
-                    number={stats.regulares}
-                    label="Regulares"
-                    color={theme.orange}
-                    theme={theme}
-                  />
-                  <StatItem
-                    iconName="trophy"
-                    number={stats.aprobadas}
-                    label="Aprobadas"
-                    color={theme.green}
-                    theme={theme}
-                  />
-                  <StatItem
-                    iconName="book-outline"
-                    number={stats.noCursadas}
-                    label="Pendientes"
-                    color={theme.icon}
-                    theme={theme}
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.fullReportButton, { backgroundColor: theme.tint }]}
-                  onPress={() => {
-                    setStatsModalVisible(false);
-                    router.push('/mis-materias');
-                  }}
-                >
-                  <Text style={styles.fullReportText}>Ver Plan de Estudios Completo</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
+        <TouchableWithoutFeedback onPress={closeStats}>
+          <Animated.View style={[styles.modalOverlay, { opacity: statsOverlayOpacity }]}>
+            <View style={StyleSheet.absoluteFill} />
+          </Animated.View>
         </TouchableWithoutFeedback>
+
+        <Animated.View
+          style={[
+            styles.sheetContent,
+            {
+              backgroundColor: cardColor,
+              transform: [{ translateY: statsSheetAnim }]
+            }
+          ]}
+        >
+          {/* Handle Bar */}
+          <View style={[styles.modalHandle, { backgroundColor: theme.separator }]} />
+
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Estado Académico</Text>
+              <Text style={[styles.modalSubtitle, { color: theme.icon }]}>Tu resumen hasta el momento</Text>
+            </View>
+            <TouchableOpacity onPress={closeStats} style={styles.closeButton}>
+              <View style={[styles.closeBtnCircle, { backgroundColor: theme.separator + '30' }]}>
+                <Ionicons name="close" size={20} color={theme.text} />
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Resumen Principal (Con Circular Progress SVG) */}
+          <View style={styles.statsSummary}>
+            <CircularProgress
+              percentage={carreraProgreso}
+              size={160}
+              strokeWidth={12}
+              color={theme.tint}
+              theme={theme}
+              privacyMode={privacyMode}
+            />
+          </View>
+
+          {/* Desgloze de Estados (Bento Grid) */}
+          <View style={styles.statsGrid}>
+            <StatItem
+              iconName="school"
+              number={privacyMode ? "•" : stats.cursando}
+              label="Cursando"
+              color={theme.blue}
+              theme={theme}
+              isBig
+            />
+            <StatItem
+              iconName="checkbox"
+              number={privacyMode ? "•" : stats.regulares}
+              label="Regulares"
+              color={theme.orange}
+              theme={theme}
+              isBig
+            />
+            <StatItem
+              iconName="trophy"
+              number={privacyMode ? "•" : stats.aprobadas}
+              label="Aprobadas"
+              color={theme.green}
+              theme={theme}
+              isBig
+            />
+            <StatItem
+              iconName="book-outline"
+              number={privacyMode ? "•" : stats.noCursadas}
+              label="Pendientes"
+              color={theme.icon}
+              theme={theme}
+              isBig
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.fullReportButton, { backgroundColor: theme.tint }]}
+            onPress={() => {
+              closeStats();
+              router.push('/mis-materias');
+            }}
+          >
+            <Text style={styles.fullReportText}>Ver Mis Materias</Text>
+            <Ionicons name="arrow-forward" size={18} color="white" style={{ marginLeft: 8 }} />
+          </TouchableOpacity>
+        </Animated.View>
       </Modal>
     </View>
   );
 }
 
-// ... Componentes auxiliares (PriorityCard, TableRow, StatItem, TaskItem) ...
+// --- SVG CIRCULAR PROGRESS ---
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+const CircularProgress = ({ percentage, size, strokeWidth, color, theme, privacyMode }: any) => {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
+  // Animate progress when percentage changes
+  useEffect(() => {
+    const target = privacyMode ? 0 : percentage;
+    Animated.timing(progressAnim, {
+      toValue: target,
+      duration: 1000,
+      useNativeDriver: false
+    }).start();
+  }, [percentage, privacyMode]);
+
+  const strokeDashoffset = progressAnim.interpolate({
+    inputRange: [0, 100],
+    outputRange: [circumference, 0],
+  });
+
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <G rotation="-90" origin={`${size / 2}, ${size / 2}`}>
+          {/* Background Circle */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={theme.separator + '40'}
+            strokeWidth={strokeWidth}
+            fill="transparent"
+          />
+          {/* Progress Circle */}
+          <AnimatedCircle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={color}
+            strokeWidth={strokeWidth}
+            fill="transparent"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+          />
+        </G>
+      </Svg>
+      {/* Centered Text */}
+      <View style={[StyleSheet.absoluteFillObject, { alignItems: 'center', justifyContent: 'center' }]}>
+        <Text style={[styles.statsBigNumber, { color: theme.text }]}>
+          {privacyMode ? "•••" : `${Math.round(percentage)}%`}
+        </Text>
+        <Text style={[styles.statsTotal, { color: theme.icon }]}>Completado</Text>
+      </View>
+    </View>
+  );
+};
+
+// --- COMPONENTE ANIMADO PARA TAREAS ---
 
 const PriorityCard = ({ icon, label, subtitle, color, onPress, theme, cardColor }: any) => (
   <Pressable
@@ -597,10 +761,13 @@ const TableRow = ({ icon, label, color, onPress, isLast, theme }: any) => (
   </Pressable>
 );
 
-const StatItem = ({ number, label, color, theme, iconName }: any) => (
-  <View style={[styles.statItem, { backgroundColor: color + '15' }]}>
-    <Ionicons name={iconName} size={24} color={color} style={{ marginBottom: 8 }} />
-    <Text style={[styles.statNumber, { color: theme.text }]}>{number}</Text>
+// StatItem Mejorado para Grid
+const StatItem = ({ number, label, color, theme, iconName, isBig }: any) => (
+  <View style={[styles.statItem, { backgroundColor: theme.background }]}>
+    <View style={[styles.statIconCircle, { backgroundColor: color + '20' }]}>
+      <Ionicons name={iconName} size={20} color={color} />
+    </View>
+    <Text style={[styles.statNumber, { color: theme.text, fontSize: isBig ? 28 : 24 }]}>{number}</Text>
     <Text style={[styles.statLabelItem, { color: theme.icon }]}>{label}</Text>
   </View>
 );
@@ -832,28 +999,45 @@ const styles = StyleSheet.create({
   infoBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 10, paddingBottom: 20 },
   infoText: { fontSize: 11, fontWeight: '500', marginLeft: 6 },
 
-  // Modal Styles
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: {
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
-    padding: 24,
-    paddingBottom: 50,
+  // Modal Styles Actualizados (Sheet)
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  sheetContent: {
+    position: 'absolute',
+    bottom: 0,
     width: '100%',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    padding: 24,
+    paddingBottom: 40,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 20
   },
   modalHandle: { width: 40, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: 20, opacity: 0.3 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
-  modalTitle: { fontSize: 22, fontWeight: '800' },
-  closeButton: { padding: 5 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
+  modalTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
+  modalSubtitle: { fontSize: 13, fontWeight: '500', marginTop: 4 },
+
+  closeButton: { padding: 4 },
+  closeBtnCircle: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+
   statsSummary: { alignItems: 'center', marginBottom: 30 },
-  statsCircleContainer: { alignItems: 'center' },
-  statsBigNumber: { fontSize: 56, fontWeight: '900', letterSpacing: -2, lineHeight: 60 },
-  statsLabel: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
-  statsTotal: { fontSize: 13, fontWeight: '500', opacity: 0.6 },
+  percRing: {
+    width: 140, height: 140, borderRadius: 70,
+    borderWidth: 8, alignItems: 'center', justifyContent: 'center',
+    borderStyle: 'solid'
+  },
+  statsBigNumber: { fontSize: 42, fontWeight: '900', letterSpacing: -1 },
+  statsTotal: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 },
+
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12, marginBottom: 20 },
-  statItem: { width: '47%', padding: 16, borderRadius: 20, alignItems: 'center', marginBottom: 0 },
-  statNumber: { fontSize: 24, fontWeight: '800', marginBottom: 4 },
+  statItem: {
+    width: '48%', padding: 16, borderRadius: 20,
+    alignItems: 'flex-start', marginBottom: 0,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1
+  },
+  statIconCircle: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  statNumber: { fontSize: 28, fontWeight: '800', marginBottom: 2 },
   statLabelItem: { fontSize: 13, fontWeight: '600' },
-  fullReportButton: { marginTop: 10, padding: 18, borderRadius: 16, alignItems: 'center' },
+
+  fullReportButton: { flexDirection: 'row', marginTop: 10, padding: 18, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   fullReportText: { color: 'white', fontWeight: '700', fontSize: 16 },
 });
