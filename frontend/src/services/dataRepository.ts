@@ -40,6 +40,23 @@ export const DataRepository = {
         }
     },
 
+    async updateRecordatorio(isGuest: boolean, id: number, data: any) {
+        if (isGuest) {
+            const current = (await getLocalData(LOCAL_RECORDATORIOS_KEY)) || [];
+            const updated = current.map((r: any) => r.id === id ? { ...r, ...data } : r);
+            await saveLocalData(LOCAL_RECORDATORIOS_KEY, updated);
+            return updated.find((r: any) => r.id === id);
+        } else {
+            try {
+                const response = await api.put(`/recordatorios/${id}`, data);
+                return response.data.data;
+            } catch (error) {
+                console.error("Error updating recordatorio:", error);
+                throw error;
+            }
+        }
+    },
+
     async deleteRecordatorio(isGuest: boolean, id: number) {
         if (isGuest) {
             const current = (await getLocalData(LOCAL_RECORDATORIOS_KEY)) || [];

@@ -21,6 +21,7 @@ import {
   Animated
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../src/constants/theme';
 import { useThemeColor } from '../src/hooks/use-theme-color';
@@ -362,9 +363,9 @@ export default function HomeScreen() {
         {/* SECCIÓN: TAREAS RÁPIDAS (NUEVO) */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.icon }]}>TAREAS RÁPIDAS</Text>
-          <View style={[styles.tasksContainer, { backgroundColor: cardColor, borderColor: separatorColor }]}>
+          <View style={styles.tasksContainer}>
             {/* Input Row */}
-            <View style={[styles.taskInputRow, { borderBottomColor: separatorColor }]}>
+            <View style={[styles.taskInputRow]}>
               <TextInput
                 placeholder="Agregar nueva tarea..."
                 placeholderTextColor={theme.icon}
@@ -386,17 +387,23 @@ export default function HomeScreen() {
             {/* Tasks List */}
             {tasks.length === 0 ? (
               <View style={styles.emptyTasks}>
+                <Ionicons name="create-outline" size={24} color={theme.separator} style={{ marginBottom: 5 }} />
                 <Text style={[styles.emptyTasksText, { color: theme.icon }]}>No hay tareas pendientes</Text>
               </View>
             ) : (
               tasks.map((task: any) => (
-                <TaskItem
+                <DeletableTask
                   key={task.id}
-                  task={task}
-                  onComplete={handleCompleteTask}
+                  onComplete={() => handleCompleteTask(task.id)}
                   theme={theme}
-                  separatorColor={separatorColor}
-                />
+                >
+                  <TaskItem
+                    task={task}
+                    theme={theme}
+                    separatorColor={separatorColor}
+                    isGuest={isGuest}
+                  />
+                </DeletableTask>
               ))
             )}
           </View>
@@ -598,43 +605,112 @@ const StatItem = ({ number, label, color, theme, iconName }: any) => (
   </View>
 );
 
-const TaskItem = ({ task, onComplete, theme, separatorColor }: any) => {
-  const [isCompleting, setIsCompleting] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+// --- COMPONENTE ANIMADO PARA TAREAS ---
+const DeletableTask = ({ children, onComplete, theme }: any) => {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const opacity = useRef(new Animated.Value(1)).current;
+  const scale = useRef(new Animated.Value(1)).current;
 
-  const handlePress = () => {
-    if (isCompleting) return;
-    setIsCompleting(true);
-    Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 300,
-      delay: 500,
-      useNativeDriver: true,
-    }).start(() => {
-      onComplete(task.id);
+  // Partículas más pequeñas para tareas
+  const particles = useRef([...Array(8)].map(() => ({
+    x: new Animated.Value(0),
+    y: new Animated.Value(0),
+    opacity: new Animated.Value(0),
+    scale: new Animated.Value(0.5 + Math.random()),
+    dx: (Math.random() - 0.5) * 100,
+    dy: (Math.random() - 0.5) * 100,
+  }))).current;
+
+  const triggerDelete = () => {
+    setIsDeleting(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    const cardAnim = Animated.parallel([
+      Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+      Animated.timing(scale, { toValue: 0.95, duration: 300, useNativeDriver: true })
+    ]);
+
+    const particleAnims = particles.map(p => {
+      p.opacity.setValue(0.6);
+      return Animated.parallel([
+        Animated.timing(p.x, { toValue: p.dx, duration: 500, useNativeDriver: true }),
+        Animated.timing(p.y, { toValue: p.dy, duration: 500, useNativeDriver: true }),
+        Animated.timing(p.opacity, { toValue: 0, duration: 500, useNativeDriver: true })
+      ]);
+    });
+
+    Animated.parallel([
+      cardAnim,
+      Animated.stagger(30, particleAnims)
+    ]).start(() => {
+      onComplete();
     });
   };
 
+  // Inyectar trigger al hijo
+  const childrenWithProps = React.Children.map(children, child => {
+    if (React.isValidElement(child)) {
+      // @ts-ignore
+      return React.cloneElement(child, { onDeleteTrigger: triggerDelete });
+    }
+    return child;
+  });
+
   return (
-    <Animated.View style={{ opacity: fadeAnim }}>
-      <View style={[styles.taskItem, { borderBottomColor: separatorColor }]}>
-        <TouchableOpacity onPress={handlePress} style={styles.taskCheckbox}>
-          {isCompleting ? (
-            <View style={[styles.checkboxCircle, { backgroundColor: theme.green, borderColor: theme.green, alignItems: 'center', justifyContent: 'center' }]}>
-              <Ionicons name="checkmark" size={14} color="white" />
-            </View>
-          ) : (
-            <View style={[styles.checkboxCircle, { borderColor: theme.tint }]} />
-          )}
+    <View style={{ marginBottom: 10, zIndex: isDeleting ? 99 : 1 }}>
+      <Animated.View style={{ opacity, transform: [{ scale }] }}>
+        {childrenWithProps}
+      </Animated.View>
+      {isDeleting && particles.map((p, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            position: 'absolute', left: '10%', top: '50%',
+            width: 4, height: 4, borderRadius: 2,
+            backgroundColor: theme.text, opacity: p.opacity,
+            transform: [{ translateX: p.x }, { translateY: p.y }, { scale: p.scale }]
+          }}
+        />
+      ))}
+    </View>
+  );
+};
+
+const TaskItem = ({ task, onDeleteTrigger, theme, separatorColor, isGuest }: any) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [text, setText] = useState(task.nombre || task.titulo);
+
+  const handleSave = async () => {
+    setIsEditing(false);
+    if (text.trim() !== task.nombre) {
+      try {
+        await DataRepository.updateRecordatorio(isGuest, task.id, { nombre: text.trim() });
+      } catch (e) { console.error("Error updating task", e); }
+    }
+  };
+
+  return (
+    <View style={[styles.taskItem, { backgroundColor: theme.backgroundSecondary, borderColor: separatorColor }]}>
+      <TouchableOpacity onPress={onDeleteTrigger} style={styles.taskCheckbox}>
+        <View style={[styles.checkboxCircle, { borderColor: theme.tint }]} />
+      </TouchableOpacity>
+
+      {isEditing ? (
+        <TextInput
+          style={[styles.taskInputEdit, { color: theme.text }]}
+          value={text}
+          onChangeText={setText}
+          onBlur={handleSave}
+          onSubmitEditing={handleSave}
+          autoFocus={true}
+          returnKeyType="done"
+        />
+      ) : (
+        <TouchableOpacity onPress={() => setIsEditing(true)} style={{ flex: 1 }}>
+          <Text style={[styles.taskText, { color: theme.text }]}>{text}</Text>
         </TouchableOpacity>
-        <Text style={[
-          styles.taskText,
-          { color: isCompleting ? theme.icon : theme.text, textDecorationLine: isCompleting ? 'line-through' : 'none' }
-        ]}>
-          {task.nombre || task.titulo}
-        </Text>
-      </View>
-    </Animated.View>
+      )}
+    </View>
   );
 };
 
@@ -724,16 +800,24 @@ const styles = StyleSheet.create({
   },
 
   // Quick Tasks Styles
-  tasksContainer: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  taskInputRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: StyleSheet.hairlineWidth },
-  taskInput: { flex: 1, fontSize: 16, marginRight: 10 },
-  addTaskButton: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  emptyTasks: { padding: 20, alignItems: 'center' },
-  emptyTasksText: { fontSize: 14, fontStyle: 'italic', opacity: 0.7 },
-  taskItem: { flexDirection: 'row', alignItems: 'center', padding: 14, borderBottomWidth: StyleSheet.hairlineWidth },
-  taskCheckbox: { marginRight: 12 },
-  checkboxCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2 },
+  tasksContainer: {},
+  taskInputRow: {
+    flexDirection: 'row', alignItems: 'center', padding: 8, marginBottom: 15,
+    backgroundColor: 'rgba(150,150,150,0.1)', borderRadius: 12
+  },
+  taskInput: { flex: 1, fontSize: 16, marginRight: 10, paddingVertical: 8, paddingHorizontal: 5 },
+  addTaskButton: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  emptyTasks: { padding: 30, alignItems: 'center', justifyContent: 'center' },
+  emptyTasksText: { fontSize: 14, fontWeight: '500', opacity: 0.5 },
+
+  taskItem: {
+    flexDirection: 'row', alignItems: 'center', padding: 16,
+    borderRadius: 16, borderWidth: 1, marginBottom: 0
+  },
+  taskCheckbox: { marginRight: 15, padding: 2 },
+  checkboxCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, opacity: 0.6 },
   taskText: { fontSize: 16, fontWeight: '500' },
+  taskInputEdit: { flex: 1, fontSize: 16, fontWeight: '500', padding: 0 },
 
   priorityGrid: { flexDirection: 'row', justifyContent: 'space-between' },
   priorityCard: { flex: 1, marginHorizontal: 5, padding: 16, borderRadius: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
