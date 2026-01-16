@@ -1,11 +1,12 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
   Modal,
+  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -13,20 +14,23 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Animated as RNAnimated,
   useColorScheme,
-  KeyboardAvoidingView,
-  Platform,
+  Keyboard,
   TouchableWithoutFeedback,
-  Keyboard
+  KeyboardAvoidingView,
+  Switch
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../src/constants/theme';
+import * as Haptics from 'expo-haptics';
+import * as Notifications from 'expo-notifications';
 import { DataRepository } from '../src/services/dataRepository';
 import { useAuth } from '../src/context/AuthContext';
+import { Colors } from '../src/constants/theme';
 
 const { width, height } = Dimensions.get('window');
+const CARD_MARGIN = 20;
 
-// Paleta de colores iOS (Pastel/Vibrant) de Apple design params
 const PALETA_COLORES = [
   '#FF9F0A', // Orange
   '#0A84FF', // Blue
@@ -37,6 +41,202 @@ const PALETA_COLORES = [
   '#64D2FF'  // Cyan
 ];
 
+// --- HELPERS GLOBALES ---
+const parseDate = (fechaStr: string) => {
+  if (!fechaStr) return new Date();
+  if (fechaStr.includes('/')) {
+    const [dia, mes] = fechaStr.split('/').map(Number);
+    const hoy = new Date();
+    let anio = hoy.getFullYear();
+    if (mes < (hoy.getMonth() + 1)) anio += 1;
+    return new Date(anio, mes - 1, dia);
+  }
+  return new Date(fechaStr); // Fallback ISO
+};
+
+const getTiempoRestante = (fechaStr: string) => {
+  const fechaEvento = parseDate(fechaStr);
+  const hoy = new Date();
+  const diffTime = fechaEvento.getTime() - hoy.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) return "Finalizado";
+  if (diffDays === 0) return "¡Es hoy!";
+  if (diffDays === 1) return "Mañana";
+  if (diffDays < 30) return `${diffDays} días`;
+  return `${Math.floor(diffDays / 30)} mes(es)`;
+};
+
+// --- COMPONENTE ANIMADO "THANOS SNAP" ---
+const DeletableCard = ({
+  children,
+  onDelete,
+  onConfirm,
+  index,
+  theme
+}: {
+  children: React.ReactNode,
+  onDelete: () => void,
+  onConfirm?: () => Promise<boolean>,
+  index: number,
+  theme: any
+}) => {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const opacity = useRef(new RNAnimated.Value(1)).current;
+  const scale = useRef(new RNAnimated.Value(1)).current;
+
+  // Generar partículas aleatorias
+  const particles = useRef([...Array(12)].map(() => ({
+    x: new RNAnimated.Value(0),
+    y: new RNAnimated.Value(0),
+    opacity: new RNAnimated.Value(0),
+    scale: new RNAnimated.Value(0.5 + Math.random()),
+    dx: (Math.random() - 0.5) * 150, // Dispersión X
+    dy: (Math.random() - 0.5) * 150, // Dispersión Y
+  }))).current;
+
+  const triggerDelete = async () => {
+    // 0. Preguntar primero (Si existe onConfirm)
+    if (onConfirm) {
+      const confirmed = await onConfirm();
+      if (!confirmed) return;
+    }
+
+    setIsDeleting(true);
+    // Solo feedback táctil suave al iniciar la destrucción
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+    // 1. Fade out card + Scale down slightly
+    const cardAnim = RNAnimated.parallel([
+      RNAnimated.timing(opacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      RNAnimated.timing(scale, {
+        toValue: 0.9,
+        duration: 400,
+        useNativeDriver: true,
+      })
+    ]);
+
+    // 2. Explode particles
+    const particleAnims = particles.map(p => {
+      // Set initial state visible
+      p.opacity.setValue(0.8);
+
+      return RNAnimated.parallel([
+        RNAnimated.timing(p.x, {
+          toValue: p.dx,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        RNAnimated.timing(p.y, {
+          toValue: p.dy,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        RNAnimated.timing(p.opacity, {
+          toValue: 0,
+          duration: 600,
+          useNativeDriver: true,
+        })
+      ]);
+    });
+
+    RNAnimated.parallel([
+      cardAnim,
+      RNAnimated.stagger(20, particleAnims)
+    ]).start(() => {
+      onDelete(); // Ejecutar borrado real en DB al terminar
+    });
+  };
+
+  const childrenWithProps = React.Children.map(children, child => {
+    if (React.isValidElement(child)) {
+      // @ts-ignore
+      return React.cloneElement(child, { onDeleteTrigger: triggerDelete });
+    }
+    return child;
+  });
+
+  return (
+    <View style={[styles.swipeContainer, { zIndex: isDeleting ? 999 : 1 }]}>
+      <RNAnimated.View style={[styles.cardContainer, { opacity, transform: [{ scale }] }]}>
+        {childrenWithProps}
+      </RNAnimated.View>
+
+      {/* Partículas (solo visibles al borrar) */}
+      {isDeleting && particles.map((p, i) => (
+        <RNAnimated.View
+          key={i}
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: theme.text, // Color polvo/partícula
+            opacity: p.opacity,
+            transform: [
+              { translateX: p.x },
+              { translateY: p.y },
+              { scale: p.scale }
+            ]
+          }}
+        />
+      ))}
+    </View>
+  );
+};
+
+const EventCardContent = ({ evento, onDeleteTrigger }: { evento: any, onDeleteTrigger?: () => void }) => {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      style={[styles.card, { backgroundColor: evento.color, marginBottom: 0 }]}
+      onLongPress={onDeleteTrigger}
+    >
+      <View style={styles.cardHeader}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={[styles.tagContainer, { backgroundColor: 'rgba(0,0,0,0.2)' }]}>
+            <Text style={styles.tagText}>{evento.tipo.toUpperCase()}</Text>
+          </View>
+          <Text style={[styles.cardCountdown, { marginLeft: 10 }]}>{getTiempoRestante(evento.fecha)}</Text>
+        </View>
+        <Ionicons name="calendar-outline" size={16} color="rgba(255,255,255,0.7)" />
+      </View>
+
+      <Text style={styles.cardTitle} numberOfLines={2}>{evento.titulo}</Text>
+
+      <View style={[styles.cardFooter, { justifyContent: 'space-between' }]}>
+        <View style={{ flexDirection: 'row' }}>
+          <View style={styles.footerItem}>
+            <Ionicons name="time-outline" size={14} color="rgba(255,255,255,0.8)" />
+            <Text style={styles.footerText}>{evento.hora} hs</Text>
+          </View>
+          <View style={[styles.footerItem, { marginLeft: 15 }]}>
+            <Ionicons name="calendar-clear-outline" size={14} color="rgba(255,255,255,0.8)" />
+            <Text style={styles.footerText}>{evento.fecha}</Text>
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {evento.notificar && (
+            <Ionicons name="notifications-outline" size={16} color="rgba(255,255,255,0.6)" style={{ marginRight: 15 }} />
+          )}
+          <TouchableOpacity
+            onPress={onDeleteTrigger}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="trash-outline" size={18} color="rgba(255,255,255,0.9)" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
 export default function ParcialesScreen() {
   const router = useRouter();
   const { isGuest } = useAuth();
@@ -46,15 +246,29 @@ export default function ParcialesScreen() {
   const [eventos, setEventos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Modal State
+  // Estados para el Sheet (Modal Animado)
   const [modalVisible, setModalVisible] = useState(false);
-
-  // Form State
   const [nuevoTitulo, setNuevoTitulo] = useState('');
+  const [nuevoTipo, setNuevoTipo] = useState<'Parcial' | 'Entrega'>('Parcial');
   const [nuevaFecha, setNuevaFecha] = useState('');
   const [nuevaHora, setNuevaHora] = useState('');
-  const [nuevoTipo, setNuevoTipo] = useState<'Parcial' | 'Entrega'>('Parcial');
   const [nuevoColor, setNuevoColor] = useState(PALETA_COLORES[0]);
+
+  // Notificaciones
+  const [notificar, setNotificar] = useState(true);
+  const [anticipacion, setAnticipacion] = useState(1440); // 1 día por defecto (minutos)
+
+  const OPCIONES_ANTICIPACION = [
+    { label: 'Momento', value: 0 },
+    { label: '1 h', value: 60 },
+    { label: '1 día', value: 1440 },
+    { label: '2 días', value: 2880 },
+    { label: '1 sem', value: 10080 },
+  ];
+
+  // Animación del Sheet
+  const sheetAnim = useRef(new RNAnimated.Value(height)).current;
+  const overlayOpacity = useRef(new RNAnimated.Value(0)).current;
 
   // Cargar datos
   const loadData = async () => {
@@ -74,8 +288,10 @@ export default function ParcialesScreen() {
         tipo: item.tipo === 'PARCIAL' ? 'Parcial' : (item.tipo === 'ENTREGA' ? 'Entrega' : item.tipo),
         fechaRaw: item.fecha,
         fecha: formatearFecha(item.fecha),
-        hora: item.hora ? item.hora.toString().slice(0, 5) : "00:00",
-        color: item.color || theme.tint,
+        hora: item.hora ? item.hora.toString().slice(0, 5) : "09:00",
+        color: item.color || PALETA_COLORES[0],
+        notificar: item.notificar, // Asumiendo que la DB soporta esto, si no mockearlo o ajustarlo
+        recordatorioAnticipacion: item.recordatorioAnticipacion
       })).sort((a: any, b: any) => new Date(a.fechaRaw).getTime() - new Date(b.fechaRaw).getTime());
 
       setEventos(mapped);
@@ -86,87 +302,58 @@ export default function ParcialesScreen() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, [isGuest]);
-
-  // Helpers de Fecha
   const formatearFecha = (fechaISO: string | Date) => {
     if (!fechaISO) return '--/--';
     const date = new Date(fechaISO);
     return `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}`;
   };
 
-  const getTiempoRestante = (fechaRaw: string) => {
-    if (!fechaRaw) return "";
-    const fechaEvento = new Date(fechaRaw);
-    const hoy = new Date();
-    const diffTime = fechaEvento.getTime() - hoy.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  useEffect(() => {
+    loadData();
+  }, [isGuest]);
 
-    if (diffDays < 0) return "Finalizado";
-    if (diffDays === 0) return "¡Es hoy!";
-    if (diffDays === 1) return "Mañana";
-    if (diffDays <= 7) return `En ${diffDays} días`;
-    return `Faltan ${diffDays} días`;
+  const openSheet = () => {
+    setModalVisible(true);
+    RNAnimated.parallel([
+      RNAnimated.timing(overlayOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      RNAnimated.timing(sheetAnim, { toValue: 0, duration: 400, useNativeDriver: false }),
+    ]).start();
   };
 
-  // Handlers
-  const handleAgregar = async () => {
-    if (!nuevoTitulo || nuevaFecha.length < 5) {
-      Alert.alert("Faltan datos", "Ingresá un título y una fecha válida (DD/MM)");
-      return;
-    }
+  const closeSheet = () => {
+    RNAnimated.parallel([
+      RNAnimated.timing(overlayOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+      RNAnimated.timing(sheetAnim, { toValue: height, duration: 400, useNativeDriver: false }),
+    ]).start(() => setModalVisible(false));
+    Keyboard.dismiss();
+  };
 
+  const askConfirmation = () => {
+    return new Promise<boolean>((resolve) => {
+      Alert.alert(
+        "¿Eliminar Evento?",
+        "Esta acción no se puede deshacer.",
+        [
+          { text: "Cancelar", style: "cancel", onPress: () => resolve(false) },
+          { text: "Eliminar", style: "destructive", onPress: () => resolve(true) }
+        ]
+      );
+    });
+  };
+
+  const executeDelete = async (id: any) => {
     try {
-      // Parsear fecha DD/MM a ISO YYYY-MM-DD
-      const [d, m] = nuevaFecha.split('/');
-      const year = new Date().getFullYear();
+      await DataRepository.deleteRecordatorio(isGuest, id);
 
-      const isoDate = `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-
-      const nuevoEvento = {
-        nombre: nuevoTitulo,
-        tipo: nuevoTipo,
-        fecha: isoDate,
-        hora: nuevaHora || "09:00",
-        color: nuevoColor,
-        materiaNombre: "General"
-      };
-
-      await DataRepository.createRecordatorio(isGuest, nuevoEvento);
-      setModalVisible(false);
-
-      // Limpiar form
-      setNuevoTitulo('');
-      setNuevaFecha('');
-      setNuevaHora('');
+      // Cancelar notificación local (si se hubiera guardado el ID de notif, aunque aquí usamos el ID del evento)
+      try {
+        await Notifications.cancelScheduledNotificationAsync(id.toString());
+      } catch (e) { }
 
       loadData();
-    } catch (error) {
-      Alert.alert("Error", "No se pudo crear el evento.");
-    }
+    } catch (e) { Alert.alert("Error al borrar"); }
   };
 
-  const confirmarEliminacion = (id: number) => {
-    Alert.alert(
-      "Eliminar Evento",
-      "¿Estás seguro?",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Eliminar",
-          style: "destructive",
-          onPress: async () => {
-            await DataRepository.deleteRecordatorio(isGuest, id);
-            loadData();
-          }
-        }
-      ]
-    );
-  };
-
-  // Input manipulators
   const handleChangeFecha = (text: string) => {
     let limpio = text.replace(/[^0-9]/g, '');
     if (limpio.length > 2) limpio = limpio.slice(0, 2) + '/' + limpio.slice(2, 4);
@@ -179,106 +366,161 @@ export default function ParcialesScreen() {
     setNuevaHora(limpio);
   };
 
+  const handleAgregar = async () => {
+    if (!nuevoTitulo || nuevaFecha.length < 5) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return Alert.alert("Faltan datos", "Ingresá un título y una fecha válida (DD/MM)");
+    }
+
+    try {
+      const [d, m] = nuevaFecha.split('/');
+      const year = new Date().getFullYear();
+      const isoDate = `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+
+      const nuevoEvento = {
+        nombre: nuevoTitulo,
+        tipo: nuevoTipo,
+        fecha: isoDate,
+        hora: nuevaHora || "09:00",
+        color: nuevoColor,
+        materiaNombre: "General",
+        // Agregar campos de notificación si la DB lo soporta, o usar custom fields
+      };
+
+      const result = await DataRepository.createRecordatorio(isGuest, nuevoEvento);
+      const newId = result?.id || result?.data?.id;
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      // Programar notificación local if enabled
+      if (notificar && newId) {
+        try {
+          const fechaExamen = parseDate(nuevaFecha);
+          const [h, min] = (nuevaHora || "09:00").split(':').map(Number);
+          fechaExamen.setHours(h, min, 0, 0);
+
+          const scheduledDate = new Date(fechaExamen.getTime() - anticipacion * 60000);
+
+          if (scheduledDate > new Date()) {
+            await Notifications.scheduleNotificationAsync({
+              identifier: newId.toString(),
+              content: {
+                title: `📅 ${nuevoTipo}: ${nuevoTitulo}`,
+                body: `Recordatorio: ${nuevoTitulo} es mañana. ¡Prepárate!`,
+                data: { id: newId },
+              },
+              trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: scheduledDate
+              } as Notifications.NotificationTriggerInput,
+            });
+          }
+        } catch (notifierr) {
+          console.error("Error scheduling notification:", notifierr);
+        }
+      }
+
+      closeSheet();
+      loadData();
+
+      // Reset inputs
+      setNuevoTitulo(''); setNuevaFecha(''); setNuevaHora('');
+      setNuevoColor(PALETA_COLORES[0]); setNotificar(true);
+    } catch (error) {
+      Alert.alert("Error", "No se pudo crear el evento.");
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
 
-        {/* HEADER */}
+        {/* HEADER iOS STYLE */}
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={[styles.backButton, { backgroundColor: theme.backgroundSecondary }]}
-          >
-            <Ionicons name="chevron-back" size={24} color={theme.text} />
+          <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+            <Text style={[styles.closeText, { color: theme.tint }]}>Volver</Text>
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Exámenes y Entregas</Text>
-          <View style={{ width: 40 }} />
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Parciales</Text>
+          <TouchableOpacity onPress={openSheet} style={styles.addButtonHead}>
+            <Ionicons name="add-circle" size={28} color={theme.tint} />
+          </TouchableOpacity>
         </View>
 
-        {/* LIST */}
-        <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          {eventos.map((evento) => (
-            <TouchableOpacity
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 100 }}
+        >
+          <Text style={[styles.sectionTitle, { color: theme.icon }]}>PRÓXIMAS FECHAS</Text>
+
+          {eventos.map((evento, index) => (
+            <DeletableCard
               key={evento.id}
-              style={[styles.card, { backgroundColor: theme.backgroundSecondary }]}
-              onLongPress={() => confirmarEliminacion(evento.id)}
-              activeOpacity={0.7}
+              index={index}
+              onConfirm={() => askConfirmation()}
+              onDelete={() => executeDelete(evento.id)}
+              theme={theme}
             >
-              <View style={[styles.cardLeftStrip, { backgroundColor: evento.color }]} />
-
-              <View style={styles.cardContent}>
-                <View style={styles.cardHeader}>
-                  <View style={[styles.tagContainer, { backgroundColor: evento.color + '20' }]}>
-                    <Text style={[styles.tagText, { color: evento.color }]}>{evento.tipo.toUpperCase()}</Text>
-                  </View>
-                  <Text style={[styles.daysLeftText, { color: theme.icon }]}>{getTiempoRestante(evento.fechaRaw)}</Text>
-                </View>
-
-                <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1}>{evento.titulo}</Text>
-
-                <View style={styles.cardFooter}>
-                  <View style={styles.metaItem}>
-                    <Ionicons name="calendar-outline" size={14} color={theme.icon} />
-                    <Text style={[styles.metaText, { color: theme.icon }]}>{evento.fecha}</Text>
-                  </View>
-                  <View style={styles.metaItem}>
-                    <Ionicons name="time-outline" size={14} color={theme.icon} />
-                    <Text style={[styles.metaText, { color: theme.icon }]}>{evento.hora} hs</Text>
-                  </View>
-                </View>
-              </View>
-
-              <TouchableOpacity onPress={() => confirmarEliminacion(evento.id)} style={styles.deleteIconBtn}>
-                <Ionicons name="trash-outline" size={20} color={theme.icon} style={{ opacity: 0.5 }} />
-              </TouchableOpacity>
-            </TouchableOpacity>
+              <EventCardContent evento={evento} />
+            </DeletableCard>
           ))}
 
           {eventos.length === 0 && !loading && (
             <View style={styles.emptyContainer}>
-              <Ionicons name="sparkles-outline" size={48} color={theme.icon} style={{ opacity: 0.3 }} />
-              <Text style={[styles.emptyText, { color: theme.icon }]}>Más libre que nunca.</Text>
+              <Ionicons name="sparkles-outline" size={60} color={theme.separator} />
+              <Text style={[styles.emptyText, { color: theme.icon }]}>Todo despejado</Text>
               <Text style={[styles.emptySubtext, { color: theme.icon }]}>No tenés parciales ni entregas pendientes.</Text>
+              <TouchableOpacity onPress={openSheet} style={[styles.emptyBtn, { backgroundColor: theme.tint }]}>
+                <Text style={styles.emptyBtnText}>Agregar Evento</Text>
+              </TouchableOpacity>
             </View>
           )}
-
-          <View style={{ height: 100 }} />
         </ScrollView>
-
-        {/* FAB */}
-        <TouchableOpacity
-          style={[styles.fab, { backgroundColor: theme.tint, shadowColor: theme.tint }]}
-          onPress={() => setModalVisible(true)}
-        >
-          <Ionicons name="add" size={30} color="white" />
-        </TouchableOpacity>
-
       </SafeAreaView>
 
-      {/* MODAL CREACIÓN */}
-      <Modal animationType="slide" transparent={true} visible={modalVisible}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
-            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-              <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                style={[styles.modalContent, { backgroundColor: theme.backgroundSecondary }]}
+      {/* CUSTOM ANIMATED SHEET */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="none"
+        onRequestClose={closeSheet}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+            <TouchableWithoutFeedback onPress={closeSheet}>
+              <RNAnimated.View style={[styles.sheetOverlay, { opacity: overlayOpacity, ...StyleSheet.absoluteFillObject }]} />
+            </TouchableWithoutFeedback>
+
+            <RNAnimated.View
+              style={[
+                styles.sheetContent,
+                {
+                  backgroundColor: theme.backgroundSecondary,
+                  transform: [{ translateY: sheetAnim }],
+                  maxHeight: height * 0.9
+                }
+              ]}
+            >
+              <View style={[styles.sheetHandle, { backgroundColor: theme.separator }]} />
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 20 }}
               >
-
-                {/* Handle Bar */}
-                <View style={[styles.modalHandle, { backgroundColor: theme.icon + '40' }]} />
-
-                <View style={styles.modalHeader}>
-                  <Text style={[styles.modalTitle, { color: theme.text }]}>Nuevo Evento</Text>
-                  <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeBtn}>
-                    <Ionicons name="close-circle" size={30} color={theme.icon} />
+                <View style={styles.sheetHeader}>
+                  <Text style={[styles.sheetTitle, { color: theme.text }]}>Nuevo Evento</Text>
+                  <TouchableOpacity onPress={closeSheet}>
+                    <Ionicons name="close-circle" size={28} color={theme.icon} />
                   </TouchableOpacity>
                 </View>
 
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
-
-                  {/* TIPO (Segmented Control Style) */}
+                <View style={styles.form}>
+                  {/* TIPO */}
                   <View style={[styles.segmentedControl, { backgroundColor: theme.separator + '40' }]}>
                     {(['Parcial', 'Entrega'] as const).map((t) => (
                       <TouchableOpacity
@@ -288,7 +530,10 @@ export default function ParcialesScreen() {
                           nuevoTipo === t && styles.segmentBtnActive,
                           { backgroundColor: nuevoTipo === t ? theme.background : 'transparent' }
                         ]}
-                        onPress={() => setNuevoTipo(t)}
+                        onPress={() => {
+                          setNuevoTipo(t);
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        }}
                       >
                         <Text style={[
                           styles.segmentText,
@@ -298,82 +543,111 @@ export default function ParcialesScreen() {
                     ))}
                   </View>
 
-                  {/* FORM GROUP */}
-                  <View style={[styles.formGroup, { backgroundColor: theme.background }]}>
-                    {/* TITULO */}
-                    <View style={[styles.inputRow, { borderBottomColor: theme.separator }]}>
-                      <Text style={[styles.inputLabel, { color: theme.text }]}>Título</Text>
-                      <TextInput
-                        style={[styles.inputField, { color: theme.text }]}
-                        placeholder="Ej: Análisis II"
-                        placeholderTextColor={theme.icon}
-                        value={nuevoTitulo}
-                        onChangeText={setNuevoTitulo}
-                      />
-                    </View>
+                  <Text style={[styles.label, { color: theme.icon }]}>TÍTULO</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: theme.separator + '30', color: theme.text }]}
+                    placeholder="E.J. ANÁLISIS II"
+                    placeholderTextColor={theme.icon}
+                    value={nuevoTitulo}
+                    onChangeText={setNuevoTitulo}
+                  />
 
-                    {/* FECHA */}
-                    <View style={[styles.inputRow, { borderBottomColor: theme.separator }]}>
-                      <Text style={[styles.inputLabel, { color: theme.text }]}>Fecha</Text>
+                  <View style={styles.rowInputs}>
+                    <View style={{ flex: 1, marginRight: 15 }}>
+                      <Text style={[styles.label, { color: theme.icon }]}>FECHA (DD/MM)</Text>
                       <TextInput
-                        style={[styles.inputField, { color: theme.text }]}
-                        placeholder="DD/MM"
+                        style={[styles.input, { backgroundColor: theme.separator + '30', color: theme.text }]}
+                        placeholder="19/02"
                         placeholderTextColor={theme.icon}
-                        keyboardType="numeric"
-                        maxLength={5}
                         value={nuevaFecha}
                         onChangeText={handleChangeFecha}
-                      />
-                    </View>
-
-                    {/* HORA */}
-                    <View style={[styles.inputRow, { borderBottomWidth: 0 }]}>
-                      <Text style={[styles.inputLabel, { color: theme.text }]}>Hora</Text>
-                      <TextInput
-                        style={[styles.inputField, { color: theme.text }]}
-                        placeholder="09:00"
-                        placeholderTextColor={theme.icon}
                         keyboardType="numeric"
                         maxLength={5}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.label, { color: theme.icon }]}>HORA</Text>
+                      <TextInput
+                        style={[styles.input, { backgroundColor: theme.separator + '30', color: theme.text }]}
+                        placeholder="09:00"
+                        placeholderTextColor={theme.icon}
                         value={nuevaHora}
                         onChangeText={handleChangeHora}
+                        keyboardType="numeric"
+                        maxLength={5}
                       />
                     </View>
                   </View>
 
-                  {/* COLOR */}
-                  <Text style={[styles.sectionHeader, { color: theme.icon }]}>ETIQUETA</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.colorRow}>
-                    {PALETA_COLORES.map(c => (
+                  {/* SECCIÓN NOTIFICACIONES */}
+                  <View style={[styles.settingRow, { borderBottomColor: theme.separator + '50' }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <View style={[styles.settingIcon, { backgroundColor: theme.tint }]}>
+                        <Ionicons name="notifications" size={16} color="#fff" />
+                      </View>
+                      <Text style={[styles.settingLabel, { color: theme.text }]}>Recordatorio</Text>
+                    </View>
+                    <Switch
+                      value={notificar}
+                      onValueChange={setNotificar}
+                      trackColor={{ false: theme.separator, true: theme.tint }}
+                      ios_backgroundColor={theme.separator}
+                    />
+                  </View>
+
+                  {notificar && (
+                    <View style={styles.anticipacionContainer}>
+                      <Text style={[styles.label, { color: theme.icon, marginBottom: 10 }]}>AVISO</Text>
+                      <View style={styles.selectorContainer}>
+                        {OPCIONES_ANTICIPACION.map(opcion => (
+                          <TouchableOpacity
+                            key={opcion.value}
+                            onPress={() => {
+                              setAnticipacion(opcion.value);
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            }}
+                            style={[
+                              styles.selectorItem,
+                              anticipacion === opcion.value && { backgroundColor: theme.tint }
+                            ]}
+                          >
+                            <Text style={[
+                              styles.selectorText,
+                              { color: anticipacion === opcion.value ? '#fff' : theme.icon }
+                            ]}>
+                              {opcion.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                  <Text style={[styles.label, { color: theme.icon, marginBottom: 15 }]}>COLOR IDENTIFICADOR</Text>
+                  <View style={styles.colorPalette}>
+                    {PALETA_COLORES.map(color => (
                       <TouchableOpacity
-                        key={c}
-                        style={[styles.colorCircle, { backgroundColor: c }, nuevoColor === c && styles.colorSelected]}
-                        onPress={() => setNuevoColor(c)}
+                        key={color}
+                        style={[styles.colorCircle, { backgroundColor: color }, nuevoColor === color && { borderWidth: 3, borderColor: theme.text }]}
+                        onPress={() => {
+                          setNuevoColor(color);
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        }}
                       >
-                        {nuevoColor === c && <Ionicons name="checkmark" size={20} color="white" />}
+                        {nuevoColor === color && <Ionicons name="checkmark" size={20} color="#fff" />}
                       </TouchableOpacity>
                     ))}
-                  </ScrollView>
+                  </View>
 
-                  {/* BOTÓN GUARDAR */}
-                  <TouchableOpacity
-                    style={[styles.saveButton, { backgroundColor: theme.tint }]}
-                    onPress={handleAgregar}
-                  >
-                    <Text style={styles.saveButtonText}>Guardar Evento</Text>
+                  <TouchableOpacity style={[styles.btnConfirm, { backgroundColor: theme.tint }]} onPress={handleAgregar}>
+                    <Text style={styles.btnTextConfirm}>Guardar Evento</Text>
                   </TouchableOpacity>
-
-                  {/* Spacer for keyboard */}
-                  <View style={{ height: 20 }} />
-
-                </ScrollView>
-
-              </KeyboardAvoidingView>
-            </TouchableWithoutFeedback>
+                </View>
+              </ScrollView>
+            </RNAnimated.View>
           </View>
-        </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
-
     </View>
   );
 }
@@ -382,64 +656,136 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
   },
-  backButton: {
-    width: 40, height: 40, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  headerTitle: { fontSize: 18, fontWeight: '700' },
-  listContent: { padding: 20 },
+  headerTitle: { fontSize: 22, fontWeight: '800' },
+  closeButton: { paddingVertical: 5 },
+  closeText: { fontSize: 17, fontWeight: '600' },
+  addButtonHead: { padding: 5 },
 
-  // CARD
+  content: { paddingHorizontal: CARD_MARGIN },
+  sectionTitle: { fontSize: 12, fontWeight: '700', letterSpacing: 1.2, marginBottom: 15, marginTop: 10 },
+
   card: {
-    borderRadius: 16, flexDirection: 'row', marginBottom: 15,
-    overflow: 'hidden', elevation: 2, shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
   },
-  cardLeftStrip: { width: 6, height: '100%' },
-  cardContent: { flex: 1, padding: 16 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  tagContainer: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  tagText: { fontSize: 10, fontWeight: '800' },
-  daysLeftText: { fontSize: 11, fontWeight: '500' },
-  cardTitle: { fontSize: 17, fontWeight: '700', marginBottom: 8 },
-  cardFooter: { flexDirection: 'row' },
-  metaItem: { flexDirection: 'row', alignItems: 'center', marginRight: 15 },
-  metaText: { fontSize: 12, marginLeft: 4, fontWeight: '500' },
-  deleteIconBtn: { padding: 16, justifyContent: 'center' },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  cardCountdown: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.9)',
+    textTransform: 'uppercase',
+  },
+  tagContainer: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  tagText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#fff',
+  },
+  cardTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#fff',
+    marginBottom: 15,
+    lineHeight: 28,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.2)',
+    paddingTop: 12,
+  },
+  footerItem: { flexDirection: 'row', alignItems: 'center' },
+  footerText: { color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '600', marginLeft: 6 },
 
-  // EMPTY
-  emptyContainer: { alignItems: 'center', marginTop: 100 },
-  emptyText: { fontSize: 18, fontWeight: '700', marginTop: 15 },
-  emptySubtext: { fontSize: 14, marginTop: 5, textAlign: 'center', width: '70%' },
+  emptyContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 80 },
+  emptyText: { fontSize: 18, fontWeight: '700', textAlign: 'center', marginTop: 15, color: '#333' },
+  emptySubtext: { fontSize: 14, marginTop: 5, textAlign: 'center', width: '70%', opacity: 0.6 },
+  emptyBtn: { marginTop: 25, paddingHorizontal: 25, paddingVertical: 12, borderRadius: 15 },
+  emptyBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 
-  // FAB
-  fab: {
-    position: 'absolute', bottom: 30, right: 20,
-    width: 56, height: 56, borderRadius: 28,
-    alignItems: 'center', justifyContent: 'center',
-    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5
+  // SHEET STYLES
+  sheetOverlay: { backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheetContent: {
+    width: '100%',
+    padding: 24,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
   },
+  sheetHandle: { width: 40, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: 15 },
+  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
+  sheetTitle: { fontSize: 24, fontWeight: '800' },
+  form: { width: '100%' },
+  label: { fontSize: 11, fontWeight: '800', marginBottom: 8, letterSpacing: 1 },
+  input: { borderRadius: 12, padding: 15, fontSize: 17, fontWeight: '500', marginBottom: 20 },
+  rowInputs: { flexDirection: 'row', justifyContent: 'space-between' },
+  colorPalette: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25 },
+  colorCircle: { width: 45, height: 45, borderRadius: 22.5, justifyContent: 'center', alignItems: 'center' },
+  btnConfirm: { padding: 18, borderRadius: 16, alignItems: 'center', marginTop: 10 },
+  btnTextConfirm: { color: '#fff', fontWeight: '800', fontSize: 17 },
 
-  // MODAL - iOS Style
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: {
-    borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 30,
-    maxHeight: '90%', // Limit height better
-    minHeight: '50%',
+  // Settings / Notifications Styles
+  settingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    marginBottom: 20,
   },
-  modalHandle: {
-    width: 40, height: 5, borderRadius: 3,
-    alignSelf: 'center', marginBottom: 15
+  settingIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 7,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
   },
-  modalHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10
+  settingLabel: {
+    fontSize: 16,
+    fontWeight: '600',
   },
-  modalTitle: { fontSize: 22, fontWeight: '800' },
-  closeBtn: { padding: 5 },
+  anticipacionContainer: {
+    marginBottom: 25,
+  },
+  selectorContainer: {
+    flexDirection: 'row',
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.03)',
+    borderRadius: 12,
+    padding: 3,
+  },
+  selectorItem: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  selectorText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
 
   // Segmented Control
   segmentedControl: {
@@ -449,23 +795,12 @@ const styles = StyleSheet.create({
   segmentBtnActive: { shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 },
   segmentText: { fontSize: 13 },
 
-  // Form Group
-  formGroup: { borderRadius: 12, overflow: 'hidden', marginBottom: 25 },
-  inputRow: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, height: 50,
-    borderBottomWidth: StyleSheet.hairlineWidth
+  // SWIPE STYLES
+  swipeContainer: {
+    marginBottom: 16,
+    position: 'relative',
   },
-  inputLabel: { width: 80, fontSize: 16, fontWeight: '500' },
-  inputField: { flex: 1, fontSize: 16, height: '100%', textAlign: 'right' },
-
-  sectionHeader: { fontSize: 12, fontWeight: '600', marginBottom: 10, marginLeft: 5, textTransform: 'uppercase' },
-  colorRow: { flexDirection: 'row', paddingBottom: 10, marginBottom: 15 },
-  colorCircle: { width: 44, height: 44, borderRadius: 22, marginRight: 12, justifyContent: 'center', alignItems: 'center' },
-  colorSelected: { borderWidth: 3, borderColor: 'rgba(150,150,150,0.5)' },
-
-  saveButton: {
-    height: 54, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    marginTop: 10, shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 4, elevation: 4
+  cardContainer: {
+    width: '100%',
   },
-  saveButtonText: { color: 'white', fontSize: 17, fontWeight: '700' },
 });

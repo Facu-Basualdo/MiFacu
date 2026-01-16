@@ -208,7 +208,7 @@ export default function HomeScreen() {
         nombre: newTask.trim(),
         descripcion: 'Tarea Rápida',
         fecha: new Date().toISOString().split('T')[0], // YYYY-MM-DD
-        hora: `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')} `,
+        hora: `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}`,
         tipo: 'quick_task'
       };
 

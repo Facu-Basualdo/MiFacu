@@ -26,12 +26,16 @@ function RootNavigator() {
   );
 }
 
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <View style={{ flex: 1, backgroundColor: 'black' }}>
-        <RootNavigator />
-      </View>
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <View style={{ flex: 1, backgroundColor: 'black' }}>
+          <RootNavigator />
+        </View>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }

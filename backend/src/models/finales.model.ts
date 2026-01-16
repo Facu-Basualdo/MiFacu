@@ -26,6 +26,12 @@ export class Final {
     @Column({ name: 'notificado', type: 'boolean', default: false })
     notificado!: boolean;
 
+    @Column({ name: 'notificar', type: 'boolean', default: false })
+    notificar!: boolean;
+
+    @Column({ name: 'recordatorio_anticipacion', type: 'int', default: 0 })
+    recordatorioAnticipacion!: number;
+
     @Column({ name: 'user_id', type: 'uuid', nullable: true })
     userId!: string;
 

@@ -38,8 +38,10 @@ export class FinalesService {
         fecha: Date;
         hora: string;
         color: string;
+        notificar?: boolean;
+        recordatorioAnticipacion?: number;
     }, userId: string): Promise<Final> {
-        const { materiaNombre, fecha, hora, color } = data;
+        const { materiaNombre, fecha, hora, color, notificar, recordatorioAnticipacion } = data;
 
         const materia = await this.materiasService.findOrCreateMateria(materiaNombre);
 
@@ -49,6 +51,8 @@ export class FinalesService {
             hora,
             color,
             notificado: false,
+            notificar: notificar || false,
+            recordatorioAnticipacion: recordatorioAnticipacion || 0,
             materia,
             userId // Asignar el ID del usuario
         });
@@ -68,6 +72,8 @@ export class FinalesService {
             hora: string;
             color: string;
             notificado: boolean;
+            notificar: boolean;
+            recordatorioAnticipacion: number;
         }>,
         userId: string
     ): Promise<Final> {
