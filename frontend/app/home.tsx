@@ -126,14 +126,27 @@ export default function HomeScreen() {
           const horaActual = hoy.getHours();
 
           let proxima = null;
+          let actual = null;
           let minDiff = Infinity;
 
           cursandoMaterias.forEach((m: any) => {
             if (m.dia === diaActual) {
               const horaMateria = parseInt(m.hora);
+              const duracion = parseInt(m.duracion) || 2; // Default 2hs
+              const horaMateriaFin = horaMateria + duracion;
               const diff = horaMateria - horaActual;
 
-              if (diff > 0 && diff < minDiff) {
+              // 1. Prioridad: ¿Estamos en clase ahora?
+              if (horaActual >= horaMateria && horaActual < horaMateriaFin) {
+                actual = {
+                  materia: m.materia?.nombre || m.nombre,
+                  hora: `${m.hora}:00 a ${horaMateriaFin}:00 hs`,
+                  aula: m.aula || 'Aula',
+                  tipo: 'Clase Actual'
+                };
+              }
+              // 2. Si no, ¿cuál es la siguiente?
+              else if (diff > 0 && diff < minDiff) {
                 minDiff = diff;
                 proxima = {
                   materia: m.materia?.nombre || m.nombre,
@@ -145,15 +158,17 @@ export default function HomeScreen() {
             }
           });
 
-          if (proxima) {
+          if (actual) {
+            setProximaClase(actual);
+          } else if (proxima) {
             setProximaClase(proxima);
           } else {
             // Si no hay más hoy, buscar la primera del día de mañana o simplemente mostrar "Ver agenda"
             setProximaClase({
               materia: "No hay más clases hoy",
-              hora: "Revisar agenda",
+              hora: "Ver Horarios",
               aula: "-",
-              tipo: "Agenda"
+              tipo: "Horarios"
             });
           }
         } else {
@@ -296,7 +311,7 @@ export default function HomeScreen() {
           </SafeAreaView>
         </View>
 
-        {/* NOTIFICACIÓN "PRÓXIMO PASO" (Píldora sutil dentro del flujo) */}
+        {/* NOTIFICACIÓN "PRÓXIMO PASO" (Card sutil y legible) */}
         {!loading && proximaClase && (
           <Animated.View
             style={[
@@ -312,15 +327,30 @@ export default function HomeScreen() {
                 styles.nextStepPill,
                 { backgroundColor: theme.tint, opacity: pressed ? 0.9 : 1 }
               ]}
-              onPress={() => router.push('/agenda' as any)}
+              onPress={() => router.push('/horarios' as any)}
             >
-              <View style={styles.pillBadge}>
-                <Ionicons name="notifications" size={12} color="white" />
-                <Text style={styles.pillBadgeText}>{proximaClase.tipo}</Text>
+              <View style={styles.pillHeader}>
+                <View style={styles.pillBadge}>
+                  <Ionicons name="notifications" size={14} color="white" />
+                  <Text style={styles.pillBadgeText}>{proximaClase.tipo}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
               </View>
-              <Text style={styles.pillMateria} numberOfLines={1}>{proximaClase.materia}</Text>
-              <Text style={styles.pillTime}>{proximaClase.hora}</Text>
-              <Ionicons name="chevron-forward" size={12} color="rgba(255,255,255,0.7)" style={{ marginLeft: 4 }} />
+
+              <Text style={styles.pillMateria}>{proximaClase.materia}</Text>
+
+              <View style={styles.pillFooter}>
+                <View style={styles.pillInfoItem}>
+                  <Ionicons name="time" size={14} color="rgba(255,255,255,0.8)" />
+                  <Text style={styles.pillInfoText}>{proximaClase.hora}</Text>
+                </View>
+                {proximaClase.aula && proximaClase.aula !== '-' && (
+                  <View style={[styles.pillInfoItem, { marginLeft: 16 }]}>
+                    <Ionicons name="location" size={14} color="rgba(255,255,255,0.8)" />
+                    <Text style={styles.pillInfoText}>{proximaClase.aula}</Text>
+                  </View>
+                )}
+              </View>
             </Pressable>
           </Animated.View>
         )}
@@ -630,51 +660,67 @@ const styles = StyleSheet.create({
   section: { marginBottom: 25, paddingHorizontal: 20 },
   sectionTitle: { fontSize: 13, fontWeight: '600', marginBottom: 12, marginLeft: 5, textTransform: 'uppercase', letterSpacing: 0.5 },
 
-  // Estilos Píldora de Notificación Inline
+  // Estilos Notificación Inline (Card Style)
   inlinePillContainer: {
     paddingHorizontal: 20,
     marginTop: 0,
-    marginBottom: 20,
+    marginBottom: 25,
   },
   nextStepPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-    paddingHorizontal: 12,
-    borderRadius: 25,
+    padding: 20,
+    borderRadius: 22,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  pillHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   pillBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    marginRight: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
   },
   pillBadgeText: {
     color: 'white',
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
-    marginLeft: 3,
+    marginLeft: 5,
     textTransform: 'uppercase',
   },
   pillMateria: {
     color: 'white',
-    fontSize: 13,
-    fontWeight: '700',
-    flex: 1,
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: 15,
+    letterSpacing: -0.5,
+    lineHeight: 26,
   },
-  pillTime: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 11,
+  pillFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.15)',
+    paddingTop: 12,
+  },
+  pillInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pillInfoText: {
+    color: 'white',
+    fontSize: 13,
     fontWeight: '600',
-    marginLeft: 8,
+    marginLeft: 6,
+    opacity: 0.9,
   },
 
   // Quick Tasks Styles
