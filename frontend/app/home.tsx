@@ -53,11 +53,17 @@ export default function HomeScreen() {
     noCursadas: 0
   });
 
+  const [proximaClase, setProximaClase] = useState<any>(null);
+
   // Colores dinámicos
   const backgroundColor = useThemeColor({}, 'background');
   const textColor = useThemeColor({}, 'text');
   const cardColor = useThemeColor({}, 'backgroundSecondary');
   const separatorColor = useThemeColor({}, 'separator');
+
+  // ANIMACIONES ANIMATED (Estable en esta versión)
+  const notificationAnim = useRef(new Animated.Value(-100)).current;
+  const notificationOpacity = useRef(new Animated.Value(0)).current;
 
   // Cargar datos reales
   useFocusEffect(
@@ -107,14 +113,74 @@ export default function HomeScreen() {
           const porcentaje = Math.round((aprobadas / totalPlan) * 100);
           setCarreraProgreso(porcentaje);
         }
+
+        // 4. Calcular Próxima Clase
+        const cursandoMaterias = userMaterias.filter((m: any) =>
+          String(m.estado).toLowerCase().includes('cursad') && m.dia && m.hora !== null
+        );
+
+        if (cursandoMaterias.length > 0) {
+          const diasSemana = ['DO', 'LU', 'MA', 'MI', 'JU', 'VI', 'SA'];
+          const hoy = new Date();
+          const diaActual = diasSemana[hoy.getDay()];
+          const horaActual = hoy.getHours();
+
+          let proxima = null;
+          let minDiff = Infinity;
+
+          cursandoMaterias.forEach((m: any) => {
+            if (m.dia === diaActual) {
+              const horaMateria = parseInt(m.hora);
+              const diff = horaMateria - horaActual;
+
+              if (diff > 0 && diff < minDiff) {
+                minDiff = diff;
+                proxima = {
+                  materia: m.materia?.nombre || m.nombre,
+                  hora: `${m.hora}:00 hs`,
+                  aula: m.aula || 'Aula',
+                  tipo: 'Próxima Clase'
+                };
+              }
+            }
+          });
+
+          if (proxima) {
+            setProximaClase(proxima);
+          } else {
+            // Si no hay más hoy, buscar la primera del día de mañana o simplemente mostrar "Ver agenda"
+            setProximaClase({
+              materia: "No hay más clases hoy",
+              hora: "Revisar agenda",
+              aula: "-",
+              tipo: "Agenda"
+            });
+          }
+        } else {
+          setProximaClase(null);
+        }
       } else if (isGuest) {
         setCarreraProgreso(0);
         setStats({ aprobadas: 0, cursando: 0, regulares: 0, totalPlan: 0, noCursadas: 0 });
+        setProximaClase(null);
       }
     } catch (error) {
       console.error("Error cargando progreso:", error);
     } finally {
       setLoading(false);
+      // Disparar animación de notificación después de cargar
+      Animated.parallel([
+        Animated.timing(notificationAnim, {
+          toValue: 0,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(notificationOpacity, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        })
+      ]).start();
     }
   };
 
@@ -159,13 +225,6 @@ export default function HomeScreen() {
     }
   };
 
-  const proximaClase = {
-    materia: "Cargando clase...",
-    hora: "Ver agenda",
-    aula: "Pabellón Central",
-    tipo: "Pendiente"
-  };
-
   const handleLogout = () => {
     Alert.alert(
       "Cerrar Sesión",
@@ -192,83 +251,83 @@ export default function HomeScreen() {
         translucent
       />
 
-      {/* HEADER iOS */}
-      <View style={[styles.header, { borderBottomColor: separatorColor }]}>
-        <SafeAreaView>
-          <View style={styles.headerTop}>
-            <View>
-              <Text style={[styles.headerLabel, { color: theme.icon }]}>MI PANEL</Text>
-              <Text style={[styles.headerTitle, { color: textColor }]}>
-                Hola, {user?.user_metadata?.full_name?.split(' ')[0] || 'Usuario'} 👋
-              </Text>
-            </View>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handleLogout}
-              style={[styles.avatarContainer, { borderColor: theme.tint + '40' }]}
-            >
-              <Image
-                source={{ uri: user?.user_metadata?.avatar_url || 'https://i.pravatar.cc/100?img=33' }}
-                style={styles.avatar}
-              />
-            </TouchableOpacity>
-          </View>
-
-          {/* BARRA DE PROGRESO DE CARRERA (INTERACTIVA) */}
-          <View style={styles.progressSection}>
-            <Pressable onPress={() => setStatsModalVisible(true)}>
-              <View style={styles.progressInfo}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={[styles.progressText, { color: theme.icon }]}>Progreso de Carrera</Text>
-                  <Ionicons name="information-circle-outline" size={14} color={theme.icon} style={{ marginLeft: 4, opacity: 0.7 }} />
-                </View>
-                <Text style={[styles.progressPercentage, { color: theme.tint }]}>{carreraProgreso}%</Text>
-              </View>
-              <View style={[styles.progressBarBg, { backgroundColor: theme.separator + '40' }]}>
-                <View style={[styles.progressBarFill, { width: `${carreraProgreso}%`, backgroundColor: theme.tint }]} />
-              </View>
-            </Pressable>
-          </View>
-        </SafeAreaView>
-      </View>
-
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        stickyHeaderIndices={[0]}
         showsVerticalScrollIndicator={false}
       >
+        {/* HEADER & PROGRESS (Ahora dentro del scroll) */}
+        <View style={[styles.header, { borderBottomColor: 'transparent', paddingBottom: 10 }]}>
+          <SafeAreaView edges={['top']}>
+            <View style={styles.headerTop}>
+              <View>
+                <Text style={[styles.headerLabel, { color: theme.icon }]}>MI PANEL</Text>
+                <Text style={[styles.headerTitle, { color: textColor }]}>
+                  Hola, {user?.user_metadata?.full_name?.split(' ')[0] || 'Usuario'} 👋
+                </Text>
+              </View>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleLogout}
+                style={[styles.avatarContainer, { borderColor: theme.tint + '40' }]}
+              >
+                <Image
+                  source={{ uri: user?.user_metadata?.avatar_url || 'https://i.pravatar.cc/100?img=33' }}
+                  style={styles.avatar}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* BARRA DE PROGRESO DE CARRERA */}
+            <View style={styles.progressSection}>
+              <Pressable onPress={() => setStatsModalVisible(true)}>
+                <View style={styles.progressInfo}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={[styles.progressText, { color: theme.icon }]}>Progreso de Carrera</Text>
+                    <Ionicons name="information-circle-outline" size={14} color={theme.icon} style={{ marginLeft: 4, opacity: 0.7 }} />
+                  </View>
+                  <Text style={[styles.progressPercentage, { color: theme.tint }]}>{carreraProgreso}%</Text>
+                </View>
+                <View style={[styles.progressBarBg, { backgroundColor: theme.separator + '40' }]}>
+                  <View style={[styles.progressBarFill, { width: `${carreraProgreso}%`, backgroundColor: theme.tint }]} />
+                </View>
+              </Pressable>
+            </View>
+          </SafeAreaView>
+        </View>
+
+        {/* NOTIFICACIÓN "PRÓXIMO PASO" (Píldora sutil dentro del flujo) */}
+        {!loading && proximaClase && (
+          <Animated.View
+            style={[
+              styles.inlinePillContainer,
+              {
+                opacity: notificationOpacity,
+                transform: [{ translateY: notificationAnim }]
+              }
+            ]}
+          >
+            <Pressable
+              style={({ pressed }) => [
+                styles.nextStepPill,
+                { backgroundColor: theme.tint, opacity: pressed ? 0.9 : 1 }
+              ]}
+              onPress={() => router.push('/agenda' as any)}
+            >
+              <View style={styles.pillBadge}>
+                <Ionicons name="notifications" size={12} color="white" />
+                <Text style={styles.pillBadgeText}>{proximaClase.tipo}</Text>
+              </View>
+              <Text style={styles.pillMateria} numberOfLines={1}>{proximaClase.materia}</Text>
+              <Text style={styles.pillTime}>{proximaClase.hora}</Text>
+              <Ionicons name="chevron-forward" size={12} color="rgba(255,255,255,0.7)" style={{ marginLeft: 4 }} />
+            </Pressable>
+          </Animated.View>
+        )}
         {/* BARRA DE BÚSQUEDA (Sticky en iOS) */}
 
 
-        {/* WIDGET: PRÓXIMO PASO */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.icon }]}>PRÓXIMO PASO</Text>
-          <Pressable
-            style={({ pressed }) => [
-              styles.nextStepWidget,
-              { backgroundColor: theme.tint, opacity: pressed ? 0.9 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] }
-            ]}
-          >
-            <View style={styles.widgetHeader}>
-              <View style={styles.widgetBadge}>
-                <Text style={styles.widgetBadgeText}>{proximaClase.tipo}</Text>
-              </View>
-              <Ionicons name="notifications-outline" size={20} color="white" />
-            </View>
-            <Text style={styles.widgetMateria}>{proximaClase.materia}</Text>
-            <View style={styles.widgetFooter}>
-              <View style={styles.widgetInfoItem}>
-                <Ionicons name="time-outline" size={14} color="white" />
-                <Text style={styles.widgetInfoText}>{proximaClase.hora}</Text>
-              </View>
-              <View style={styles.widgetInfoItem}>
-                <Ionicons name="location-outline" size={14} color="white" />
-                <Text style={styles.widgetInfoText}>{proximaClase.aula}</Text>
-              </View>
-            </View>
-          </Pressable>
-        </View>
+        {/* WIDGET: PRÓXIMO PASO - Eliminado de aquí para ser stationary */}
 
         {/* SECCIÓN: TAREAS RÁPIDAS (NUEVO) */}
         <View style={styles.section}>
@@ -418,7 +477,6 @@ export default function HomeScreen() {
                 {/* Desgloze de Estados */}
                 <View style={styles.statsGrid}>
                   <StatItem
-                    icon="学校"
                     iconName="school"
                     number={stats.cursando}
                     label="Cursando"
@@ -426,7 +484,6 @@ export default function HomeScreen() {
                     theme={theme}
                   />
                   <StatItem
-                    icon="checkmark"
                     iconName="checkbox"
                     number={stats.regulares}
                     label="Regulares"
@@ -434,7 +491,6 @@ export default function HomeScreen() {
                     theme={theme}
                   />
                   <StatItem
-                    icon="trophy"
                     iconName="trophy"
                     number={stats.aprobadas}
                     label="Aprobadas"
@@ -442,7 +498,6 @@ export default function HomeScreen() {
                     theme={theme}
                   />
                   <StatItem
-                    icon="book"
                     iconName="book-outline"
                     number={stats.noCursadas}
                     label="Pendientes"
@@ -469,7 +524,7 @@ export default function HomeScreen() {
   );
 }
 
-// ... Componentes auxiliares (PriorityCard, TableRow, StatItem) ...
+// ... Componentes auxiliares (PriorityCard, TableRow, StatItem, TaskItem) ...
 
 const PriorityCard = ({ icon, label, subtitle, color, onPress, theme, cardColor }: any) => (
   <Pressable
@@ -520,11 +575,10 @@ const TaskItem = ({ task, onComplete, theme, separatorColor }: any) => {
   const handlePress = () => {
     if (isCompleting) return;
     setIsCompleting(true);
-    // Animate fade out and strikethrough effect
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 300,
-      delay: 500, // Wait a bit so user sees the check and strikethrough
+      delay: 500,
       useNativeDriver: true,
     }).start(() => {
       onComplete(task.id);
@@ -575,14 +629,54 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, height: '100%', marginLeft: 8, fontSize: 16 },
   section: { marginBottom: 25, paddingHorizontal: 20 },
   sectionTitle: { fontSize: 13, fontWeight: '600', marginBottom: 12, marginLeft: 5, textTransform: 'uppercase', letterSpacing: 0.5 },
-  nextStepWidget: { padding: 20, borderRadius: 20, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10 },
-  widgetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  widgetBadge: { backgroundColor: 'rgba(255, 255, 255, 0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  widgetBadgeText: { color: 'white', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  widgetMateria: { color: 'white', fontSize: 22, fontWeight: '800', marginBottom: 15, letterSpacing: -0.5 },
-  widgetFooter: { flexDirection: 'row', alignItems: 'center' },
-  widgetInfoItem: { flexDirection: 'row', alignItems: 'center', marginRight: 20 },
-  widgetInfoText: { color: 'white', fontSize: 12, fontWeight: '600', marginLeft: 6, opacity: 0.9 },
+
+  // Estilos Píldora de Notificación Inline
+  inlinePillContainer: {
+    paddingHorizontal: 20,
+    marginTop: 0,
+    marginBottom: 20,
+  },
+  nextStepPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    paddingHorizontal: 12,
+    borderRadius: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  pillBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginRight: 10,
+  },
+  pillBadgeText: {
+    color: 'white',
+    fontSize: 9,
+    fontWeight: '800',
+    marginLeft: 3,
+    textTransform: 'uppercase',
+  },
+  pillMateria: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
+  },
+  pillTime: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+
   // Quick Tasks Styles
   tasksContainer: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   taskInputRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: StyleSheet.hairlineWidth },
@@ -614,7 +708,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 25,
     borderTopRightRadius: 25,
     padding: 24,
-    // Quitamos height fija para que crezca según contenido
     paddingBottom: 50,
     width: '100%',
   },
