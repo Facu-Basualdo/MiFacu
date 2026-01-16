@@ -39,7 +39,7 @@ const HOUR_HEIGHT = 50;
 const TIME_COL_WIDTH = 50;
 const DAY_COL_WIDTH = 160;
 const START_HOUR = 8;
-const END_HOUR = 22;
+const END_HOUR = 24;
 const DIAS = ['LU', 'MA', 'MI', 'JU', 'VI', 'SA'];
 
 // Día actual real
