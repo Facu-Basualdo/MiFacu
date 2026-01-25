@@ -17,7 +17,9 @@ import {
   Alert,
   Keyboard,
   Animated,
-  Platform
+  Platform,
+  Switch,
+  Appearance
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -49,6 +51,10 @@ export default function HomeScreen() {
   // Estados para el Modal de Estadísticas
   const [statsModalVisible, setStatsModalVisible] = useState(false);
   const [privacyMode, setPrivacyMode] = useState(false); // Estado Modo Privado
+
+  // Estados para el Modal de Perfil
+  const [profileModalVisible, setProfileModalVisible] = useState(false);
+  const [darkModeEnabled, setDarkModeEnabled] = useState(colorScheme === 'dark');
   const [stats, setStats] = useState({
     aprobadas: 0,
     cursando: 0,
@@ -72,6 +78,10 @@ export default function HomeScreen() {
   // Animaciones Sheet Estadísticas
   const statsSheetAnim = useRef(new Animated.Value(Dimensions.get('window').height)).current;
   const statsOverlayOpacity = useRef(new Animated.Value(0)).current;
+
+  // Animaciones Sheet Perfil
+  const profileSheetAnim = useRef(new Animated.Value(Dimensions.get('window').height)).current;
+  const profileOverlayOpacity = useRef(new Animated.Value(0)).current;
 
   // FASE 1: Header iOS Colapsable - scrollY ref e interpolaciones
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -119,6 +129,49 @@ export default function HomeScreen() {
         useNativeDriver: true,
       }),
     ]).start(() => setStatsModalVisible(false));
+  };
+
+  // Funciones Modal Perfil
+  const openProfile = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setProfileModalVisible(true);
+    Animated.parallel([
+      Animated.timing(profileOverlayOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.spring(profileSheetAnim, {
+        toValue: 0,
+        useNativeDriver: true,
+        damping: 18,
+        stiffness: 120,
+        mass: 0.8,
+      }),
+    ]).start();
+  };
+
+  const closeProfile = () => {
+    Animated.parallel([
+      Animated.timing(profileOverlayOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(profileSheetAnim, {
+        toValue: Dimensions.get('window').height,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setProfileModalVisible(false));
+  };
+
+  const toggleDarkMode = async (value: boolean) => {
+    setDarkModeEnabled(value);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await AsyncStorage.setItem('theme_preference', value ? 'dark' : 'light');
+    // Nota: Para cambio real del tema necesitarías un contexto de tema global
+    // Por ahora guardamos la preferencia
   };
 
   // Cargar datos reales
@@ -357,9 +410,9 @@ export default function HomeScreen() {
           <View style={styles.headerInlineContent}>
             <Text style={[styles.headerInlineTitle, { color: textColor }]}>Mi Panel</Text>
             <TouchableOpacity
-              onPress={handleLogout}
+              onPress={openProfile}
               style={styles.headerInlineAvatar}
-              accessibilityLabel="Cerrar sesión"
+              accessibilityLabel="Abrir perfil"
               accessibilityRole="button"
             >
               <Image
@@ -393,9 +446,9 @@ export default function HomeScreen() {
               </View>
               <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={handleLogout}
+                onPress={openProfile}
                 style={[styles.avatarContainer, { borderColor: theme.tint + '40' }]}
-                accessibilityLabel="Cerrar sesión"
+                accessibilityLabel="Abrir perfil"
                 accessibilityRole="button"
               >
                 <Image
@@ -743,6 +796,175 @@ export default function HomeScreen() {
             <Text style={styles.fullReportText}>Ver Mis Materias</Text>
             <Ionicons name="arrow-forward" size={18} color="white" style={{ marginLeft: 8 }} />
           </TouchableOpacity>
+        </Animated.View>
+      </Modal>
+
+      {/* MODAL / SHEET DE PERFIL */}
+      <Modal
+        animationType="none"
+        transparent={true}
+        visible={profileModalVisible}
+        onRequestClose={closeProfile}
+      >
+        <TouchableWithoutFeedback onPress={closeProfile}>
+          <Animated.View style={[styles.modalOverlay, { opacity: profileOverlayOpacity }]}>
+            <View style={StyleSheet.absoluteFill} />
+          </Animated.View>
+        </TouchableWithoutFeedback>
+
+        <Animated.View
+          style={[
+            styles.profileSheetContent,
+            {
+              backgroundColor: cardColor,
+              transform: [{ translateY: profileSheetAnim }]
+            }
+          ]}
+        >
+          {/* Handle Bar */}
+          <View style={[styles.modalHandle, { backgroundColor: theme.separator }]} />
+
+          {/* Header del Perfil */}
+          <View style={styles.profileHeader}>
+            <View style={styles.profileAvatarSection}>
+              <View style={[styles.profileAvatarRing, { borderColor: theme.tint }]}>
+                <Image
+                  source={{ uri: user?.user_metadata?.avatar_url || 'https://i.pravatar.cc/100?img=33' }}
+                  style={styles.profileAvatar}
+                />
+              </View>
+              <View style={styles.profileInfo}>
+                <Text style={[styles.profileName, { color: theme.text }]}>
+                  {user?.user_metadata?.full_name || 'Usuario Invitado'}
+                </Text>
+                <Text style={[styles.profileEmail, { color: theme.icon }]}>
+                  {user?.email || 'Modo sin conexión'}
+                </Text>
+                {isGuest && (
+                  <View style={[styles.guestBadge, { backgroundColor: theme.orange + '20' }]}>
+                    <Ionicons name="person-outline" size={12} color={theme.orange} />
+                    <Text style={[styles.guestBadgeText, { color: theme.orange }]}>Invitado</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+            <TouchableOpacity onPress={closeProfile} style={styles.closeButton}>
+              <View style={[styles.closeBtnCircle, { backgroundColor: theme.separator + '30' }]}>
+                <Ionicons name="close" size={20} color={theme.text} />
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Sección de Configuración */}
+          <View style={styles.profileSection}>
+            <Text style={[styles.profileSectionTitle, { color: theme.icon }]}>PREFERENCIAS</Text>
+
+            {/* Toggle Modo Oscuro */}
+            <View style={[styles.profileOptionRow, { backgroundColor: theme.background }]}>
+              <View style={[styles.profileOptionIcon, { backgroundColor: colorScheme === 'dark' ? theme.blue : theme.orange }]}>
+                <Ionicons name={colorScheme === 'dark' ? 'moon' : 'sunny'} size={18} color="white" />
+              </View>
+              <View style={styles.profileOptionContent}>
+                <Text style={[styles.profileOptionLabel, { color: theme.text }]}>Modo Oscuro</Text>
+                <Text style={[styles.profileOptionHint, { color: theme.icon }]}>
+                  {colorScheme === 'dark' ? 'Activado' : 'Desactivado'}
+                </Text>
+              </View>
+              <Switch
+                value={darkModeEnabled}
+                onValueChange={toggleDarkMode}
+                trackColor={{ false: theme.separator, true: theme.tint + '60' }}
+                thumbColor={darkModeEnabled ? theme.tint : '#f4f3f4'}
+                ios_backgroundColor={theme.separator}
+              />
+            </View>
+
+            {/* Toggle Modo Privado */}
+            <View style={[styles.profileOptionRow, { backgroundColor: theme.background, marginTop: 8 }]}>
+              <View style={[styles.profileOptionIcon, { backgroundColor: theme.slate }]}>
+                <Ionicons name={privacyMode ? 'eye-off' : 'eye'} size={18} color="white" />
+              </View>
+              <View style={styles.profileOptionContent}>
+                <Text style={[styles.profileOptionLabel, { color: theme.text }]}>Modo Privado</Text>
+                <Text style={[styles.profileOptionHint, { color: theme.icon }]}>
+                  Oculta tu progreso académico
+                </Text>
+              </View>
+              <Switch
+                value={privacyMode}
+                onValueChange={(val) => {
+                  setPrivacyMode(val);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  AsyncStorage.setItem('privacy_mode', String(val));
+                }}
+                trackColor={{ false: theme.separator, true: theme.tint + '60' }}
+                thumbColor={privacyMode ? theme.tint : '#f4f3f4'}
+                ios_backgroundColor={theme.separator}
+              />
+            </View>
+          </View>
+
+          {/* Sección de Cuenta */}
+          <View style={styles.profileSection}>
+            <Text style={[styles.profileSectionTitle, { color: theme.icon }]}>CUENTA</Text>
+
+            {/* Info de Sesión */}
+            <TouchableOpacity
+              style={[styles.profileOptionRow, { backgroundColor: theme.background }]}
+              onPress={() => {
+                closeProfile();
+                router.push('/mis-materias');
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.profileOptionIcon, { backgroundColor: theme.blue }]}>
+                <Ionicons name="school" size={18} color="white" />
+              </View>
+              <View style={styles.profileOptionContent}>
+                <Text style={[styles.profileOptionLabel, { color: theme.text }]}>Mis Materias</Text>
+                <Text style={[styles.profileOptionHint, { color: theme.icon }]}>
+                  {stats.aprobadas} aprobadas de {stats.totalPlan}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.separator} />
+            </TouchableOpacity>
+
+            {/* Info de Almacenamiento */}
+            <View style={[styles.profileOptionRow, { backgroundColor: theme.background, marginTop: 8 }]}>
+              <View style={[styles.profileOptionIcon, { backgroundColor: theme.green }]}>
+                <Ionicons name="cloud-done" size={18} color="white" />
+              </View>
+              <View style={styles.profileOptionContent}>
+                <Text style={[styles.profileOptionLabel, { color: theme.text }]}>
+                  {isGuest ? 'Datos Locales' : 'Sincronizado'}
+                </Text>
+                <Text style={[styles.profileOptionHint, { color: theme.icon }]}>
+                  {isGuest ? 'Los datos se guardan en tu dispositivo' : 'Conectado con tu cuenta'}
+                </Text>
+              </View>
+              <View style={[styles.statusDot, { backgroundColor: theme.green }]} />
+            </View>
+          </View>
+
+          {/* Botón Cerrar Sesión */}
+          <TouchableOpacity
+            style={[styles.logoutButton, { backgroundColor: theme.red + '15' }]}
+            onPress={() => {
+              closeProfile();
+              setTimeout(() => handleLogout(), 300);
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="log-out-outline" size={20} color={theme.red} />
+            <Text style={[styles.logoutButtonText, { color: theme.red }]}>
+              {isGuest ? 'Salir del Modo Invitado' : 'Cerrar Sesión'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Versión */}
+          <Text style={[styles.versionText, { color: theme.icon }]}>
+            miFACU v1.0.0
+          </Text>
         </Animated.View>
       </Modal>
     </View>
@@ -1259,4 +1481,131 @@ const styles = StyleSheet.create({
 
   fullReportButton: { flexDirection: 'row', marginTop: 10, padding: 18, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   fullReportText: { color: 'white', fontWeight: '700', fontSize: 16 },
+
+  // Profile Modal Styles
+  profileSheetContent: {
+    position: 'absolute',
+    bottom: 0,
+    width: '100%',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    padding: 24,
+    paddingBottom: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -5 },
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 25,
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 24,
+  },
+  profileAvatarSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  profileAvatarRing: {
+    padding: 3,
+    borderRadius: 40,
+    borderWidth: 2.5,
+  },
+  profileAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  profileInfo: {
+    marginLeft: 16,
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  profileEmail: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  guestBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  guestBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  profileSection: {
+    marginBottom: 20,
+  },
+  profileSectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    marginLeft: 4,
+    textTransform: 'uppercase',
+  },
+  profileOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+  },
+  profileOptionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileOptionContent: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  profileOptionLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  profileOptionHint: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 16,
+    marginTop: 8,
+  },
+  logoutButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 10,
+  },
+  versionText: {
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 16,
+    opacity: 0.6,
+  },
 });
