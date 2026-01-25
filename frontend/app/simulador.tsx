@@ -15,18 +15,35 @@ const TOTAL_LEVELS = 5;
 const ITEMS_PER_LEVEL = 8; // Ancho de 8 para soportar 1er año del Plan 2023
 
 const COLORS = {
-  aprobada: '#00ff9d',     
-  regularizada: '#FFD700', 
-  pendiente: '#FFFFFF',    
-  bloqueada: '#1a1a1a',    
+  aprobada: '#00ff9d',
+  regularizada: '#FFD700',
+  pendiente: '#FFFFFF',
+  bloqueada: '#1a1a1a',
   fondo: '#050a10',
   lineaInactiva: '#222'
 };
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
+interface Materia {
+  id: number;
+  nombre: string;
+  nivel: number;
+  col: number;
+  reqs: number[];
+  estado?: string;
+}
+
 // --- COMPONENTE CABLE ---
-const CableConector = ({ x1, y1, x2, y2, isActive }) => {
+interface CableProps {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  isActive: boolean;
+}
+
+const CableConector = ({ x1, y1, x2, y2, isActive }: CableProps) => {
   const animatedValue = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -45,7 +62,7 @@ const CableConector = ({ x1, y1, x2, y2, isActive }) => {
 
   const strokeDashoffset = animatedValue.interpolate({
     inputRange: [0, 1],
-    outputRange: [1500, 0], 
+    outputRange: [1500, 0],
   });
 
   return (
@@ -67,14 +84,14 @@ const CableConector = ({ x1, y1, x2, y2, isActive }) => {
 };
 
 // --- PLAN DE ESTUDIOS 2023 REAL (Extraído de tu PDF) ---
-const PLAN_ESTUDIOS = [
+const PLAN_ESTUDIOS: Materia[] = [
   // --- NIVEL 1 (8 Materias) ---
   { id: 1, nombre: "Análisis Mat. I", nivel: 1, col: 0, reqs: [] },
   { id: 2, nombre: "Álgebra y Geom.", nivel: 1, col: 1, reqs: [] },
   { id: 3, nombre: "Física I", nivel: 1, col: 2, reqs: [] },
   { id: 4, nombre: "Algoritmos y ED", nivel: 1, col: 3, reqs: [] }, // Troncal
   { id: 5, nombre: "Arq. Computad.", nivel: 1, col: 4, reqs: [] },
-  { id: 6, nombre: "Sist. y Proc. Neg.", nivel: 1, col: 5, reqs: [] }, 
+  { id: 6, nombre: "Sist. y Proc. Neg.", nivel: 1, col: 5, reqs: [] },
   { id: 7, nombre: "Lógica y Est. D.", nivel: 1, col: 6, reqs: [] },
   { id: 8, nombre: "Inglés I", nivel: 1, col: 7, reqs: [] },
 
@@ -97,7 +114,7 @@ const PLAN_ESTUDIOS = [
 
   // --- NIVEL 4 ---
   { id: 22, nombre: "Simulación", nivel: 4, col: 0, reqs: [17] }, // Proba
-  { id: 23, nombre: "Teoría de Control", nivel: 4, col: 1, reqs: [9, 10] }, 
+  { id: 23, nombre: "Teoría de Control", nivel: 4, col: 1, reqs: [9, 10] },
   { id: 24, nombre: "Redes de Info", nivel: 4, col: 2, reqs: [13, 18] }, // SO + Comunicaciones
   { id: 25, nombre: "Adm. de Recursos", nivel: 4, col: 5, reqs: [20, 26] }, // Diseño + IO
   { id: 26, nombre: "Inv. Operativa", nivel: 4, col: 6, reqs: [17] }, // Proba
@@ -113,48 +130,48 @@ const PLAN_ESTUDIOS = [
 
 export default function PlanMapaScreen() {
   const router = useRouter();
-  const [materias, setMaterias] = useState([]);
+  const [materias, setMaterias] = useState<Materia[]>([]);
 
   useEffect(() => {
     // Inicialización
-    const dataInicial = PLAN_ESTUDIOS.map(m => ({
+    const dataInicial: Materia[] = PLAN_ESTUDIOS.map(m => ({
       ...m,
       estado: m.nivel === 1 ? 'pendiente' : 'bloqueada'
     }));
     setMaterias(recalcularCascada(dataInicial));
   }, []);
 
-  const recalcularCascada = (lista) => {
+  const recalcularCascada = (lista: Materia[]) => {
     if (!lista) return [];
     let nuevaLista = [...lista];
-    
+
     // 3 pasadas para asegurar propagación
     for (let i = 0; i < 3; i++) {
-        nuevaLista = nuevaLista.map(materia => {
-            if (materia.nivel === 1) {
-                if (materia.estado === 'bloqueada') return { ...materia, estado: 'pendiente' };
-                return materia;
-            }
+      nuevaLista = nuevaLista.map(materia => {
+        if (materia.nivel === 1) {
+          if (materia.estado === 'bloqueada') return { ...materia, estado: 'pendiente' };
+          return materia;
+        }
 
-            const requisitosCumplidos = materia.reqs.every(reqId => {
-                const matRequisito = nuevaLista.find(m => m.id === reqId);
-                return matRequisito && (matRequisito.estado === 'aprobada' || matRequisito.estado === 'regularizada');
-            });
-
-            if (requisitosCumplidos) {
-                if (materia.estado === 'bloqueada') return { ...materia, estado: 'pendiente' };
-            } else {
-                if (materia.estado !== 'aprobada' && materia.estado !== 'regularizada') {
-                    return { ...materia, estado: 'bloqueada' };
-                }
-            }
-            return materia;
+        const requisitosCumplidos = materia.reqs.every(reqId => {
+          const matRequisito = nuevaLista.find(m => m.id === reqId);
+          return matRequisito && (matRequisito.estado === 'aprobada' || matRequisito.estado === 'regularizada');
         });
+
+        if (requisitosCumplidos) {
+          if (materia.estado === 'bloqueada') return { ...materia, estado: 'pendiente' };
+        } else {
+          if (materia.estado !== 'aprobada' && materia.estado !== 'regularizada') {
+            return { ...materia, estado: 'bloqueada' };
+          }
+        }
+        return materia;
+      });
     }
     return nuevaLista;
   };
 
-  const handlePressNode = (materia) => {
+  const handlePressNode = (materia: Materia) => {
     if (materia.estado === 'bloqueada') return;
 
     let nuevoEstado = 'pendiente';
@@ -162,7 +179,7 @@ export default function PlanMapaScreen() {
     else if (materia.estado === 'regularizada') nuevoEstado = 'aprobada';
     else if (materia.estado === 'aprobada') nuevoEstado = 'pendiente';
 
-    const nuevasMaterias = materias.map(m => 
+    const nuevasMaterias = materias.map(m =>
       m.id === materia.id ? { ...m, estado: nuevoEstado } : m
     );
     setMaterias(recalcularCascada(nuevasMaterias));
@@ -170,25 +187,25 @@ export default function PlanMapaScreen() {
 
   const renderConnections = () => {
     if (!materias) return null;
-    const cables = [];
-    
+    const cables: React.ReactNode[] = [];
+
     materias.forEach(materia => {
       materia.reqs.forEach(reqId => {
         const requisito = materias.find(m => m.id === reqId);
         if (!requisito) return;
 
         const x1 = OFFSET_X + (requisito.col * (COL_WIDTH + MARGIN_X)) + (COL_WIDTH / 2);
-        const y1 = OFFSET_Y + ((requisito.nivel - 1) * ROW_HEIGHT) + COL_WIDTH; 
+        const y1 = OFFSET_Y + ((requisito.nivel - 1) * ROW_HEIGHT) + COL_WIDTH;
         const x2 = OFFSET_X + (materia.col * (COL_WIDTH + MARGIN_X)) + (COL_WIDTH / 2);
         const y2 = OFFSET_Y + ((materia.nivel - 1) * ROW_HEIGHT);
 
         const isActive = requisito.estado === 'aprobada' || requisito.estado === 'regularizada';
 
         cables.push(
-          <CableConector 
-            key={`${reqId}-${materia.id}`} 
-            x1={x1} y1={y1} x2={x2} y2={y2} 
-            isActive={isActive} 
+          <CableConector
+            key={`${reqId}-${materia.id}`}
+            x1={x1} y1={y1} x2={x2} y2={y2}
+            isActive={isActive}
           />
         );
       });
@@ -205,7 +222,7 @@ export default function PlanMapaScreen() {
 
       let borderColor = COLORS.bloqueada;
       let bgColor = '#111';
-      let icon = "lock-closed";
+      let icon: React.ComponentProps<typeof Ionicons>['name'] = "lock-closed";
       let shadowColor = 'transparent';
       let iconColor = '#444';
 
@@ -218,7 +235,7 @@ export default function PlanMapaScreen() {
       } else if (materia.estado === 'regularizada') {
         borderColor = COLORS.regularizada;
         bgColor = 'rgba(255, 215, 0, 0.1)';
-        icon = "checkmark"; 
+        icon = "checkmark";
         iconColor = COLORS.regularizada;
         shadowColor = COLORS.regularizada;
       } else if (materia.estado === 'pendiente') {
@@ -236,25 +253,25 @@ export default function PlanMapaScreen() {
         <TouchableOpacity
           key={materia.id}
           style={[
-            styles.nodeContainer, 
+            styles.nodeContainer,
             { left, top, borderColor, backgroundColor: bgColor, shadowColor, elevation: shadowColor !== 'transparent' ? 10 : 0 }
           ]}
           onPress={() => handlePressNode(materia)}
           onLongPress={() => {
-             if(materia.estado !== 'bloqueada') router.push({ pathname: '/detalle-materia', params: { ...materia } });
+            if (materia.estado !== 'bloqueada') router.push({ pathname: '/detalle-materia', params: { ...materia } as any });
           }}
           activeOpacity={0.8}
         >
-          <View style={{marginBottom: 6}}>
+          <View style={{ marginBottom: 6 }}>
             <Ionicons name={icon} size={26} color={iconColor} />
           </View>
           <Text style={[styles.nodeText, { color: materia.estado === 'bloqueada' ? '#555' : borderColor }]} numberOfLines={3}>
             {materia.nombre}
           </Text>
           <View style={[styles.levelBadge, { borderColor: materia.estado === 'bloqueada' ? '#333' : borderColor }]}>
-             <Text style={[styles.levelText, { color: materia.estado === 'bloqueada' ? '#444' : borderColor }]}>
-               {materia.nivel}
-             </Text>
+            <Text style={[styles.levelText, { color: materia.estado === 'bloqueada' ? '#444' : borderColor }]}>
+              {materia.nivel}
+            </Text>
           </View>
         </TouchableOpacity>
       );
@@ -270,8 +287,8 @@ export default function PlanMapaScreen() {
           <Ionicons name="arrow-back" size={24} color={COLORS.aprobada} />
         </TouchableOpacity>
         <View>
-           <Text style={styles.hudTitle}>INGENIERÍA EN SISTEMAS</Text>
-           <Text style={styles.hudSubtitle}>SIMULADOR DE PLAN DE ESTUDIOS</Text>
+          <Text style={styles.hudTitle}>INGENIERÍA EN SISTEMAS</Text>
+          <Text style={styles.hudSubtitle}>SIMULADOR DE PLAN DE ESTUDIOS</Text>
         </View>
         <Ionicons name="git-network-outline" size={28} color={COLORS.aprobada} />
       </View>
@@ -279,9 +296,9 @@ export default function PlanMapaScreen() {
       <ScrollView style={styles.verticalScroll} contentContainerStyle={{ paddingBottom: 100 }}>
         <ScrollView horizontal style={styles.horizontalScroll}>
           <View style={styles.canvas}>
-            <Svg 
-              height={OFFSET_Y + (ROW_HEIGHT * TOTAL_LEVELS)} 
-              width={OFFSET_X + ((COL_WIDTH + MARGIN_X) * ITEMS_PER_LEVEL) + OFFSET_X} 
+            <Svg
+              height={OFFSET_Y + (ROW_HEIGHT * TOTAL_LEVELS)}
+              width={OFFSET_X + ((COL_WIDTH + MARGIN_X) * ITEMS_PER_LEVEL) + OFFSET_X}
               style={styles.svgLayer}
             >
               {renderConnections()}
@@ -301,12 +318,17 @@ const styles = StyleSheet.create({
     paddingTop: 50, paddingBottom: 15, paddingHorizontal: 20,
     backgroundColor: 'rgba(5, 10, 16, 0.95)', borderBottomWidth: 1, borderBottomColor: '#333', zIndex: 10
   },
+  backBtn: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
   hudTitle: { color: COLORS.aprobada, fontSize: 16, fontWeight: 'bold', fontFamily: 'monospace' },
   hudSubtitle: { color: '#888', fontSize: 10, fontFamily: 'monospace', fontWeight: 'bold' },
   verticalScroll: { flex: 1 },
   horizontalScroll: { flex: 1 },
   canvas: {
-    width: OFFSET_X + ((COL_WIDTH + MARGIN_X) * ITEMS_PER_LEVEL) + OFFSET_X, 
+    width: OFFSET_X + ((COL_WIDTH + MARGIN_X) * ITEMS_PER_LEVEL) + OFFSET_X,
     height: OFFSET_Y + (ROW_HEIGHT * TOTAL_LEVELS),
     position: 'relative'
   },
