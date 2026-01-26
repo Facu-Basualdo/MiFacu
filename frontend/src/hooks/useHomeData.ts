@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
@@ -57,6 +57,9 @@ export function useHomeData(): UseHomeDataReturn {
   const [carreraProgreso, setCarreraProgreso] = useState(0);
   const [proximaClase, setProximaClase] = useState<ProximaClase | null>(null);
   const [privacyMode, setPrivacyMode] = useState(false);
+
+  // Track if initial load has been done to avoid showing skeleton on subsequent focus
+  const hasLoadedOnce = useRef(false);
 
   const checkPrivacyMode = useCallback(async () => {
     try {
@@ -126,7 +129,10 @@ export function useHomeData(): UseHomeDataReturn {
     if (authLoading) return;
 
     try {
-      setLoading(true);
+      // Only show loading skeleton on initial load, not on subsequent focus
+      if (!hasLoadedOnce.current) {
+        setLoading(true);
+      }
 
       if (!user && !isGuest) {
         setLoading(false);
@@ -169,6 +175,7 @@ export function useHomeData(): UseHomeDataReturn {
       console.error('Error cargando progreso:', error);
     } finally {
       setLoading(false);
+      hasLoadedOnce.current = true;
     }
   }, [authLoading, user, isGuest, calculateProximaClase]);
 
