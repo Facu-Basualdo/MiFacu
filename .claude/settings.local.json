@@ -25,7 +25,8 @@
       "Bash(ping:*)",
       "Bash(docker start:*)",
       "Bash(npx tsc:*)",
-      "Bash(npx expo install:*)"
+      "Bash(npx expo install:*)",
+      "Bash(node:*)"
     ]
   }
 }
