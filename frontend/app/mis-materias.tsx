@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Dimensions,
-  Modal,
   Platform,
   ScrollView,
   StatusBar,
@@ -16,16 +16,14 @@ import {
   FlatList,
   useColorScheme,
   TouchableWithoutFeedback,
-  TextInput
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
-import {
-  Animated,
+  TextInput,
   LayoutAnimation,
   UIManager,
   KeyboardAvoidingView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 // Habilitar LayoutAnimation en Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -33,12 +31,11 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 export type EstadoMateriaKey = 'no_cursado' | 'cursado' | 'regular' | 'aprobado';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { materiasApi as api } from '../src/services/api';
 import { Colors } from '../src/constants/theme';
 import { useAuth } from '../src/context/AuthContext';
 
-const { width } = Dimensions.get('window');
+const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Estados posibles para las materias
 const getEstadosMateria = (theme: any) => ({
@@ -69,21 +66,23 @@ interface UsuarioMateria {
   aula?: string;
 }
 
-// --- COMPONENTE AUXILIAR PARA ANIMAR ENTRADA (Estilo Repositorio) ---
-const AnimatedItem = ({ children, theme }: { children: React.ReactNode, theme: any }) => {
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const slideAnim = React.useRef(new Animated.Value(20)).current;
+// --- COMPONENTE AUXILIAR PARA ANIMAR ENTRADA ---
+const AnimatedItem = ({ children, index }: { children: React.ReactNode, index?: number }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
   React.useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 500,
+        duration: 400,
+        delay: (index || 0) * 50,
         useNativeDriver: true,
       }),
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 500,
+        duration: 400,
+        delay: (index || 0) * 50,
         useNativeDriver: true,
       }),
     ]).start();
@@ -121,16 +120,50 @@ function MisMateriasScreen() {
   const [horaFin, setHoraFin] = useState<string>('20:00');
   const [aula, setAula] = useState<string>('');
 
-  // --- ANIMACIONES (Estilo Repositorio) ---
-  const scrollY = React.useRef(new Animated.Value(0)).current;
+  // Estados para DateTimePicker
+  const [horaInicioDate, setHoraInicioDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(18, 0, 0, 0);
+    return d;
+  });
+  const [horaFinDate, setHoraFinDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(20, 0, 0, 0);
+    return d;
+  });
+  const [showInicioTimePicker, setShowInicioTimePicker] = useState(false);
+  const [showFinTimePicker, setShowFinTimePicker] = useState(false);
 
-  // Animaciones para Modal 1 (Seleccionar Materia)
-  const modalSheetAnim = React.useRef(new Animated.Value(Dimensions.get('window').height)).current;
-  const modalBackdropAnim = React.useRef(new Animated.Value(0)).current;
+  // Estados para búsqueda y filtros
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filtroActivo, setFiltroActivo] = useState<'todas' | EstadoMateriaKey>('todas');
 
-  // Animaciones para Modal 2 (Estado/Horario)
-  const estadoSheetAnim = React.useRef(new Animated.Value(Dimensions.get('window').height)).current;
-  const estadoBackdropAnim = React.useRef(new Animated.Value(0)).current;
+  // Filtrar materias según búsqueda y filtro
+  const materiasFiltradas = useMemo(() => {
+    let filtered = misMaterias;
+
+    if (filtroActivo !== 'todas') {
+      filtered = filtered.filter(m => m.estado === filtroActivo);
+    }
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(m =>
+        m.materia.nombre.toLowerCase().includes(query) ||
+        m.materia.nivel?.toString().includes(query) ||
+        m.materia.numero?.toString().includes(query)
+      );
+    }
+
+    return filtered;
+  }, [misMaterias, searchQuery, filtroActivo]);
+
+  // --- ANIMACIONES ---
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const modalSheetAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const modalBackdropAnim = useRef(new Animated.Value(0)).current;
+  const estadoSheetAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const estadoBackdropAnim = useRef(new Animated.Value(0)).current;
 
   const headerOpacity = scrollY.interpolate({
     inputRange: [40, 70],
@@ -176,7 +209,7 @@ function MisMateriasScreen() {
         useNativeDriver: true,
       }),
       Animated.timing(sheetAnim, {
-        toValue: Dimensions.get('window').height,
+        toValue: SCREEN_HEIGHT,
         duration: 300,
         useNativeDriver: true,
       }),
@@ -200,16 +233,15 @@ function MisMateriasScreen() {
 
   // Cargar datos iniciales
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       cargarDatos();
     }, [])
   );
 
-  const cargarDatos = async () => {
+  const cargarDatos = async (showLoading = true) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
 
-      // Obtener usuario actual
       const userId = user?.id;
       if (!userId && !isGuest) {
         Alert.alert('Error', 'No se encontró sesión activa');
@@ -220,7 +252,9 @@ function MisMateriasScreen() {
       const finalId = userId || 'guest';
       setUsuarioId(finalId);
 
-      // Cargar materias del usuario y disponibles
+      // Usar LayoutAnimation para transición suave
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+
       await Promise.all([
         cargarMisMaterias(finalId),
         cargarMateriasDisponibles(finalId)
@@ -230,15 +264,13 @@ function MisMateriasScreen() {
       console.error('Error cargando datos:', error);
       Alert.alert('Error', 'No se pudieron cargar los datos');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
   const cargarMisMaterias = async (userId: string) => {
     try {
       const data = await api.getMateriasByUsuario(userId);
-
-      // Ordenar: 1. Cursando primero, 2. Por número de materia
       const sortedData = data.sort((a: any, b: any) => {
         if (a.estado === 'cursado' && b.estado !== 'cursado') return -1;
         if (a.estado !== 'cursado' && b.estado === 'cursado') return 1;
@@ -261,18 +293,49 @@ function MisMateriasScreen() {
     }
   };
 
+  const formatDateToTime = (date: Date): string => {
+    const hours = date.getHours().toString().padStart(2, '0');
+    const mins = date.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${mins}`;
+  };
+
+  const onHoraInicioChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    // En Android siempre cerrar, en iOS cerrar si se confirmó o canceló
+    if (Platform.OS === 'android' || event.type === 'set' || event.type === 'dismissed') {
+      setShowInicioTimePicker(false);
+    }
+    if (selectedDate && event.type !== 'dismissed') {
+      setHoraInicioDate(selectedDate);
+      setHoraInicio(formatDateToTime(selectedDate));
+    }
+  };
+
+  const onHoraFinChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android' || event.type === 'set' || event.type === 'dismissed') {
+      setShowFinTimePicker(false);
+    }
+    if (selectedDate && event.type !== 'dismissed') {
+      setHoraFinDate(selectedDate);
+      setHoraFin(formatDateToTime(selectedDate));
+    }
+  };
+
   const seleccionarMateria = (materia: Materia) => {
     setMateriaSeleccionada(materia);
-    setEstadoSeleccionado('no_cursado'); // Estado por defecto
+    setEstadoSeleccionado('no_cursado');
     setDia('LU');
     setHoraInicio('18:00');
     setHoraFin('20:00');
     setAula('');
     setModoEdicion(false);
-    // setModalVisible(false); // Eliminado para el flujo animado
-    // setEstadoModalVisible(true); // Eliminado para el flujo animado
 
-    // Nuevo flujo animado:
+    const initDate = new Date();
+    initDate.setHours(18, 0, 0, 0);
+    setHoraInicioDate(initDate);
+    const endDate = new Date();
+    endDate.setHours(20, 0, 0, 0);
+    setHoraFinDate(endDate);
+
     animarCerrarModal(modalSheetAnim, modalBackdropAnim, () => {
       setModalVisible(false);
       setEstadoModalVisible(true);
@@ -286,7 +349,6 @@ function MisMateriasScreen() {
     try {
       setLoadingAction(true);
 
-      // Parsear horas y calcular duración de forma robusta
       const parseTime = (timeStr: string) => {
         const match = timeStr.match(/(\d{1,2}):(\d{2})/);
         return match ? parseInt(match[1]) : 0;
@@ -304,36 +366,22 @@ function MisMateriasScreen() {
       } : { dia: null, hora: null, duracion: null, aula: null };
 
       if (modoEdicion && materiaEditando) {
-        // Modo edición: actualizar estado
         await api.updateEstadoMateria(usuarioId, materiaEditando.materiaId, estadoSeleccionado, schedule);
         triggerHaptic('success');
       } else {
-        // Modo agregar: crear nueva materia
         await api.addMateriaToUsuario(usuarioId, materiaSeleccionada.id, estadoSeleccionado as any, schedule);
         triggerHaptic('success');
       }
 
       setModoEdicion(false);
 
-      // await cargarDatos(); // Recargar datos -> se llama después de cerrar
+      // Cerrar modal y recargar datos sin mostrar pantalla de loading
       cerrarModalEstado();
-      cargarDatos();
+      await cargarDatos(false);
+
     } catch (error: any) {
       console.error('Error guardando materia:', error);
       Alert.alert('Error', error.message || 'No se pudo guardar la materia');
-    } finally {
-      setLoadingAction(false);
-    }
-  };
-
-  const cambiarEstado = async (materiaId: number, nuevoEstado: keyof typeof ESTADOS_MATERIA) => {
-    try {
-      setLoadingAction(true);
-      await api.updateEstadoMateria(usuarioId, materiaId, nuevoEstado);
-      await cargarDatos(); // Recargar datos
-    } catch (error: any) {
-      console.error('Error cambiando estado:', error);
-      Alert.alert('Error', error.message || 'No se pudo cambiar el estado de la materia');
     } finally {
       setLoadingAction(false);
     }
@@ -344,14 +392,24 @@ function MisMateriasScreen() {
       setLoadingAction(true);
       await api.removeMateriaFromUsuario(usuarioId, materiaId);
       triggerHaptic('success');
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      await cargarDatos(); // Recargar datos
+      await cargarDatos(false);
     } catch (error: any) {
       console.error('Error eliminando materia:', error);
       Alert.alert('Error', error.message || 'No se pudo eliminar la materia');
     } finally {
       setLoadingAction(false);
     }
+  };
+
+  const confirmarEliminar = (materiaId: number, nombre: string) => {
+    Alert.alert(
+      'Eliminar materia',
+      `¿Estás seguro de eliminar "${nombre}"?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Eliminar', style: 'destructive', onPress: () => eliminarMateria(materiaId, nombre) }
+      ]
+    );
   };
 
   const abrirDetalleMateria = (usuarioMateria: UsuarioMateria) => {
@@ -366,6 +424,14 @@ function MisMateriasScreen() {
     setHoraInicio(`${hIni}:00`);
     setHoraFin(`${hFin}:00`);
     setAula(usuarioMateria.aula || '');
+
+    const initDate = new Date();
+    initDate.setHours(hIni, 0, 0, 0);
+    setHoraInicioDate(initDate);
+    const endDate = new Date();
+    endDate.setHours(hFin, 0, 0, 0);
+    setHoraFinDate(endDate);
+
     setModoEdicion(true);
     setEstadoModalVisible(true);
     animarAbrirModal(estadoSheetAnim, estadoBackdropAnim);
@@ -379,6 +445,9 @@ function MisMateriasScreen() {
         style={[styles.materiaCard, { backgroundColor: theme.backgroundSecondary }]}
         onPress={() => abrirDetalleMateria(item)}
         activeOpacity={0.7}
+        accessibilityLabel={`Materia ${item.materia.nombre}, estado ${estadoInfo.label}`}
+        accessibilityHint="Toca para editar esta materia"
+        accessibilityRole="button"
       >
         <View style={[styles.cardLeftStrip, { backgroundColor: estadoInfo.color }]} />
 
@@ -390,8 +459,11 @@ function MisMateriasScreen() {
               </Text>
             </View>
             <TouchableOpacity
-              onPress={() => eliminarMateria(item.materiaId, item.materia.nombre)}
+              onPress={() => confirmarEliminar(item.materiaId, item.materia.nombre)}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityLabel={`Eliminar ${item.materia.nombre}`}
+              accessibilityHint="Toca dos veces para eliminar esta materia"
+              accessibilityRole="button"
             >
               <Ionicons name="trash-outline" size={18} color={theme.icon} style={{ opacity: 0.6 }} />
             </TouchableOpacity>
@@ -440,6 +512,9 @@ function MisMateriasScreen() {
       onPress={() => { triggerHaptic(); seleccionarMateria(item); }}
       disabled={loadingAction}
       activeOpacity={0.7}
+      accessibilityLabel={`Agregar ${item.nombre}`}
+      accessibilityHint="Toca para agregar esta materia a tu lista"
+      accessibilityRole="button"
     >
       <View style={styles.disponibleInfo}>
         <Text style={[styles.disponibleNombre, { color: theme.text }]}>{item.nombre}</Text>
@@ -464,7 +539,7 @@ function MisMateriasScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
 
-      {/* STICKY HEADER (Estilo Repositorio) */}
+      {/* STICKY HEADER */}
       <Animated.View style={[
         styles.headerInline,
         {
@@ -474,15 +549,25 @@ function MisMateriasScreen() {
         }
       ]}>
         <View style={styles.headerInlineContent}>
-          <TouchableOpacity onPress={() => { triggerHaptic(); router.back(); }} style={styles.headerBtn}>
+          <TouchableOpacity
+            onPress={() => { triggerHaptic(); router.back(); }}
+            style={styles.headerBtn}
+            accessibilityLabel="Volver"
+            accessibilityRole="button"
+          >
             <Ionicons name="chevron-back" size={24} color={theme.blue} />
           </TouchableOpacity>
           <Text style={[styles.headerInlineTitle, { color: theme.text }]}>Mis Materias</Text>
-          <TouchableOpacity onPress={() => {
-            triggerHaptic('medium');
-            setModalVisible(true);
-            animarAbrirModal(modalSheetAnim, modalBackdropAnim);
-          }} style={styles.headerBtn}>
+          <TouchableOpacity
+            onPress={() => {
+              triggerHaptic('medium');
+              setModalVisible(true);
+              animarAbrirModal(modalSheetAnim, modalBackdropAnim);
+            }}
+            style={styles.headerBtn}
+            accessibilityLabel="Agregar materia"
+            accessibilityRole="button"
+          >
             <Ionicons name="add" size={30} color={theme.blue} />
           </TouchableOpacity>
         </View>
@@ -501,14 +586,24 @@ function MisMateriasScreen() {
           {/* LARGE TITLE HEADER */}
           <View style={styles.headerLarge}>
             <Animated.View style={[styles.headerTopRow, { opacity: headerLargeOpacity }]}>
-              <TouchableOpacity onPress={() => { triggerHaptic(); router.back(); }} style={styles.circularBtn}>
+              <TouchableOpacity
+                onPress={() => { triggerHaptic(); router.back(); }}
+                style={styles.circularBtn}
+                accessibilityLabel="Volver"
+                accessibilityRole="button"
+              >
                 <Ionicons name="chevron-back" size={24} color={theme.blue} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => {
-                triggerHaptic('medium');
-                setModalVisible(true);
-                animarAbrirModal(modalSheetAnim, modalBackdropAnim);
-              }} style={styles.circularBtn}>
+              <TouchableOpacity
+                onPress={() => {
+                  triggerHaptic('medium');
+                  setModalVisible(true);
+                  animarAbrirModal(modalSheetAnim, modalBackdropAnim);
+                }}
+                style={styles.circularBtn}
+                accessibilityLabel="Agregar materia"
+                accessibilityRole="button"
+              >
                 <Ionicons name="add" size={30} color={theme.blue} />
               </TouchableOpacity>
             </Animated.View>
@@ -517,21 +612,106 @@ function MisMateriasScreen() {
             </Animated.Text>
           </View>
 
+          {/* BÚSQUEDA Y FILTROS */}
+          <View style={styles.searchSection}>
+            <View style={[styles.searchContainer, { backgroundColor: theme.backgroundSecondary }]}>
+              <Ionicons name="search" size={18} color={theme.icon} style={styles.searchIcon} />
+              <TextInput
+                style={[styles.searchInput, { color: theme.text }]}
+                placeholder="Buscar materia..."
+                placeholderTextColor={theme.icon}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                returnKeyType="search"
+                accessibilityLabel="Buscar materia"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setSearchQuery('')}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityLabel="Limpiar búsqueda"
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="close-circle" size={18} color={theme.icon} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.filtersScroll}
+              contentContainerStyle={styles.filtersContent}
+            >
+              <TouchableOpacity
+                onPress={() => { triggerHaptic(); setFiltroActivo('todas'); }}
+                style={[
+                  styles.filterChip,
+                  { backgroundColor: filtroActivo === 'todas' ? theme.blue : theme.backgroundSecondary }
+                ]}
+                accessibilityLabel="Filtrar todas"
+                accessibilityState={{ selected: filtroActivo === 'todas' }}
+                accessibilityRole="button"
+              >
+                <Text style={[
+                  styles.filterChipText,
+                  { color: filtroActivo === 'todas' ? '#fff' : theme.text }
+                ]}>
+                  Todas
+                </Text>
+              </TouchableOpacity>
+              {Object.entries(ESTADOS_MATERIA).map(([key, info]) => (
+                <TouchableOpacity
+                  key={key}
+                  onPress={() => { triggerHaptic(); setFiltroActivo(key as EstadoMateriaKey); }}
+                  style={[
+                    styles.filterChip,
+                    { backgroundColor: filtroActivo === key ? info.color : theme.backgroundSecondary }
+                  ]}
+                  accessibilityLabel={`Filtrar por ${info.label}`}
+                  accessibilityState={{ selected: filtroActivo === key }}
+                  accessibilityRole="button"
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    { color: filtroActivo === key ? '#fff' : theme.text }
+                  ]}>
+                    {info.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
           {/* MIS MATERIAS */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: theme.icon }]}>MIS MATERIAS ({misMaterias.length})</Text>
+              <Text style={[styles.sectionTitle, { color: theme.icon }]}>
+                {filtroActivo === 'todas' ? 'MIS MATERIAS' : ESTADOS_MATERIA[filtroActivo].label.toUpperCase()} ({materiasFiltradas.length})
+              </Text>
             </View>
 
-            {misMaterias.length === 0 ? (
+            {materiasFiltradas.length === 0 ? (
               <View style={[styles.emptyState, { backgroundColor: theme.backgroundSecondary }]}>
-                <Ionicons name="book-outline" size={48} color={theme.icon} style={{ opacity: 0.3 }} />
-                <Text style={[styles.emptyText, { color: theme.text }]}>No tienes materias</Text>
-                <Text style={[styles.emptySubtext, { color: theme.icon }]}>Agrega tus primeras materias para comenzar</Text>
+                {misMaterias.length === 0 ? (
+                  <>
+                    <Ionicons name="book-outline" size={48} color={theme.icon} style={{ opacity: 0.3 }} />
+                    <Text style={[styles.emptyText, { color: theme.text }]}>No tienes materias</Text>
+                    <Text style={[styles.emptySubtext, { color: theme.icon }]}>Agrega tus primeras materias para comenzar</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="search-outline" size={48} color={theme.icon} style={{ opacity: 0.3 }} />
+                    <Text style={[styles.emptyText, { color: theme.text }]}>Sin resultados</Text>
+                    <Text style={[styles.emptySubtext, { color: theme.icon }]}>
+                      No hay materias que coincidan con tu búsqueda
+                    </Text>
+                  </>
+                )}
               </View>
             ) : (
-              misMaterias.map((item, index) => (
-                <AnimatedItem key={item.id} theme={theme}>
+              materiasFiltradas.map((item, index) => (
+                <AnimatedItem key={item.id} index={index}>
                   {renderMateriaItem({ item })}
                 </AnimatedItem>
               ))
@@ -542,7 +722,7 @@ function MisMateriasScreen() {
         </Animated.ScrollView>
       </SafeAreaView>
 
-      {/* MODAL PARA AGREGAR MATERIAS (Refactorizado a Sheet) */}
+      {/* MODAL PARA AGREGAR MATERIAS */}
       {modalVisible && (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <TouchableWithoutFeedback onPress={cerrarModalSeleccion}>
@@ -593,7 +773,7 @@ function MisMateriasScreen() {
         </View>
       )}
 
-      {/* MODAL PARA SELECCIONAR ESTADO (Refactorizado a Sheet) */}
+      {/* MODAL PARA SELECCIONAR ESTADO */}
       {estadoModalVisible && (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <KeyboardAvoidingView
@@ -698,26 +878,44 @@ function MisMateriasScreen() {
                             {/* HORA INICIO */}
                             <View style={[styles.inputRow, { borderBottomColor: theme.separator, borderBottomWidth: StyleSheet.hairlineWidth }]}>
                               <Text style={[styles.inputLabel, { color: theme.text }]}>Hora Inicio</Text>
-                              <TextInput
-                                style={[styles.textInput, { color: theme.text }]}
-                                value={horaInicio}
-                                onChangeText={setHoraInicio}
-                                placeholder="Ej: 17:00 hs"
-                                placeholderTextColor={theme.icon}
-                              />
+                              <TouchableOpacity
+                                onPress={() => setShowInicioTimePicker(true)}
+                                style={styles.timeButton}
+                              >
+                                <Text style={[styles.timeButtonText, { color: theme.blue }]}>{horaInicio}</Text>
+                              </TouchableOpacity>
                             </View>
+                            {showInicioTimePicker && (
+                              <DateTimePicker
+                                value={horaInicioDate}
+                                mode="time"
+                                is24Hour={true}
+                                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                onChange={onHoraInicioChange}
+                                minuteInterval={30}
+                              />
+                            )}
 
                             {/* HORA FIN */}
                             <View style={[styles.inputRow, { borderBottomColor: theme.separator, borderBottomWidth: StyleSheet.hairlineWidth }]}>
                               <Text style={[styles.inputLabel, { color: theme.text }]}>Hora Fin</Text>
-                              <TextInput
-                                style={[styles.textInput, { color: theme.text }]}
-                                value={horaFin}
-                                onChangeText={setHoraFin}
-                                placeholder="Ej: 21:00 hs"
-                                placeholderTextColor={theme.icon}
-                              />
+                              <TouchableOpacity
+                                onPress={() => setShowFinTimePicker(true)}
+                                style={styles.timeButton}
+                              >
+                                <Text style={[styles.timeButtonText, { color: theme.blue }]}>{horaFin}</Text>
+                              </TouchableOpacity>
                             </View>
+                            {showFinTimePicker && (
+                              <DateTimePicker
+                                value={horaFinDate}
+                                mode="time"
+                                is24Hour={true}
+                                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                onChange={onHoraFinChange}
+                                minuteInterval={30}
+                              />
+                            )}
 
                             {/* AULA */}
                             <View style={styles.inputRow}>
@@ -743,7 +941,6 @@ function MisMateriasScreen() {
         </View>
       )}
 
-
       {loadingAction && (
         <View style={[styles.loadingOverlay, { backgroundColor: 'rgba(0,0,0,0.3)' }]}>
           <ActivityIndicator size="large" color={theme.tint} />
@@ -758,20 +955,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, fontSize: 16 },
-
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 15,
-  },
-  backButton: {
-    width: 40, height: 40, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  headerTitle: { fontSize: 18, fontWeight: '700' },
-
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 50 },
-
   section: { marginBottom: 30 },
   sectionHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -779,7 +963,6 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
 
-  // CARD - iOS Style
   materiaCard: {
     borderRadius: 16, flexDirection: 'row', marginBottom: 12,
     overflow: 'hidden', elevation: 2, shadowColor: "#000",
@@ -796,7 +979,6 @@ const styles = StyleSheet.create({
   materiaNivel: { fontSize: 12, marginLeft: 4, fontWeight: '500' },
   chevronContainer: { paddingRight: 12, justifyContent: 'center' },
 
-  // DISPONIBLE CARD
   disponibleCard: {
     flexDirection: 'row', alignItems: 'center', borderRadius: 14,
     padding: 16, marginBottom: 10, elevation: 1, shadowColor: "#000",
@@ -806,14 +988,10 @@ const styles = StyleSheet.create({
   disponibleNombre: { fontSize: 16, fontWeight: '600', marginBottom: 2 },
   disponibleNivel: { fontSize: 13 },
 
-  // EMPTY
-  emptyState: {
-    alignItems: 'center', padding: 40, borderRadius: 20, marginTop: 10
-  },
+  emptyState: { alignItems: 'center', padding: 40, borderRadius: 20, marginTop: 10 },
   emptyText: { fontSize: 18, fontWeight: '700', marginTop: 15 },
   emptySubtext: { fontSize: 14, marginTop: 5, textAlign: 'center', width: '80%', opacity: 0.7 },
 
-  // MODAL - iOS Style
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: {
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
@@ -823,20 +1001,15 @@ const styles = StyleSheet.create({
   estadoModalContent: {
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     paddingHorizontal: 20, paddingTop: 10, paddingBottom: 30,
-    height: '95%', // Forzar altura para ocupar casi toda la pantalla
+    height: '95%',
   },
   modalHandle: {
     width: 40, height: 5, borderRadius: 3,
     alignSelf: 'center', marginBottom: 15, marginTop: 5
   },
-  modalHeaderStyle: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15
-  },
-  modalTitle: { fontSize: 22, fontWeight: '800' },
   modalSubtitle: { fontSize: 14, marginBottom: 20, paddingHorizontal: 5 },
   modalList: { flex: 1 },
 
-  // Estado Modal Specific
   estadoModalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: 20, paddingTop: 5
@@ -857,7 +1030,6 @@ const styles = StyleSheet.create({
   estadoOptionsContent: { paddingBottom: 10 },
   modalSectionHeader: { fontSize: 12, fontWeight: '600', marginBottom: 10, marginLeft: 5, textTransform: 'uppercase' },
 
-  // iOS-like Form Group
   formGroup: { borderRadius: 12, overflow: 'hidden', marginBottom: 25 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -870,6 +1042,8 @@ const styles = StyleSheet.create({
   inputLabel: { fontSize: 17, minWidth: 100 },
   textInput: { flex: 1, fontSize: 17, textAlign: 'right' },
   daysContainer: { flexDirection: 'row', flex: 1, justifyContent: 'flex-end' },
+  timeButton: { paddingVertical: 8, paddingHorizontal: 12 },
+  timeButtonText: { fontSize: 17, fontWeight: '500' },
   dayOption: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginLeft: 4 },
   dayOptionText: { fontSize: 13, fontWeight: '600' },
 
@@ -884,7 +1058,6 @@ const styles = StyleSheet.create({
   },
   scheduleText: { fontSize: 11, fontWeight: '600', marginLeft: 4 },
 
-  // --- NUEVAS ESTILOS iOS ---
   headerInline: {
     position: 'absolute', top: 0, left: 0, right: 0, height: 100,
     zIndex: 10, borderBottomWidth: StyleSheet.hairlineWidth,
@@ -896,6 +1069,27 @@ const styles = StyleSheet.create({
   },
   headerInlineTitle: { fontSize: 17, fontWeight: '600' },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+
+  searchSection: { paddingHorizontal: 20, marginBottom: 15 },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 12,
+  },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, fontSize: 16, height: '100%' },
+  filtersScroll: { marginHorizontal: -20 },
+  filtersContent: { paddingHorizontal: 20, gap: 8 },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+  },
+  filterChipText: { fontSize: 14, fontWeight: '600' },
 
   headerLarge: { paddingTop: 60, paddingHorizontal: 20, marginBottom: 20 },
   headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
