@@ -87,6 +87,12 @@ export const materiasApi = {
         return response.data.data || response.data;
     },
 
+    // Obtener materias con correlativas para el simulador
+    getMateriasConCorrelativas: async () => {
+        const response = await api.get('/materias');
+        return response.data.data || response.data;
+    },
+
     getMateria: async (id) => {
         const response = await api.get(`/materias/${id}`);
         return response.data.data || response.data;
@@ -118,6 +124,21 @@ export const materiasApi = {
     removeMateriaFromUsuario: async (usuarioId, materiaId) => {
         const response = await api.delete(`/usuario-materias/${usuarioId}/${materiaId}`);
         return true;
+    }
+};
+
+// API de Correlativas
+export const correlativasApi = {
+    // Obtener todas las correlativas agrupadas por materia
+    getCorrelativas: async () => {
+        const response = await api.get('/correlativas');
+        return response.data.data || response.data;
+    },
+
+    // Obtener correlativas de una materia específica
+    getCorrelativasByMateria: async (materiaId) => {
+        const response = await api.get(`/correlativas/${materiaId}`);
+        return response.data.data || response.data;
     }
 };
 
