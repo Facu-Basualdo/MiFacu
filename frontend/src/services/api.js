@@ -47,6 +47,39 @@ api.interceptors.request.use(async (config) => {
     return config;
 });
 
+// Retry logic para errores de servidor (5xx) y errores de red
+api.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+        const config = error.config;
+
+        // No reintentar si no hay config o ya se reintentó 3 veces
+        if (!config || config._retryCount >= 3) {
+            return Promise.reject(error);
+        }
+
+        config._retryCount = config._retryCount || 0;
+
+        // Reintentar solo para errores 5xx o errores de red
+        const shouldRetry =
+            !error.response || // Error de red
+            (error.response.status >= 500 && error.response.status < 600);
+
+        if (shouldRetry) {
+            config._retryCount += 1;
+            console.log(`Reintentando request (${config._retryCount}/3):`, config.url);
+
+            // Esperar antes de reintentar (backoff exponencial)
+            const delay = Math.pow(2, config._retryCount) * 1000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+
+            return api(config);
+        }
+
+        return Promise.reject(error);
+    }
+);
+
 // Funciones para interactuar con el backend
 export const materiasApi = {
     getMaterias: async () => {

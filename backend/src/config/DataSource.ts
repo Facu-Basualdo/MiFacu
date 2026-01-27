@@ -19,7 +19,11 @@ export const AppDataSource = new DataSource({
     extra: {
         ssl: {
             rejectUnauthorized: false // Requerido para la conexión con Supabase
-        }
+        },
+        // Connection pooling best practices
+        max: 10, // Máximo de conexiones en el pool
+        idleTimeoutMillis: 30000, // Cerrar conexiones idle después de 30s
+        connectionTimeoutMillis: 10000, // Timeout para obtener conexión del pool
     },
     subscribers: [],
     migrations: [],
