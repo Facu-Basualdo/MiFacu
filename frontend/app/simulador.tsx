@@ -17,7 +17,7 @@ import {
 import Svg, { Circle, Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 
-import { useSimuladorData, MateriaSimulador } from '../src/hooks/useSimuladorData';
+import { useSimuladorData, MateriaSimulador, SimuladorStats } from '../src/hooks/useSimuladorData';
 import { useSheetAnimation } from '../src/hooks/useSheetAnimation';
 import { MateriaDetailSheet } from '../src/components/simulador/MateriaDetailSheet';
 import { ProgressStats } from '../src/components/simulador/ProgressStats';
@@ -107,6 +107,9 @@ export default function PlanMapaScreen() {
   // Estado local para el canvas
   const [localMaterias, setLocalMaterias] = useState<MateriaSimulador[]>([]);
 
+  // Estado local para estadísticas (se actualiza con las simulaciones)
+  const [localStats, setLocalStats] = useState<SimuladorStats>(stats);
+
   // Sheet de detalle
   const [selectedMateria, setSelectedMateria] = useState<MateriaSimulador | null>(null);
   const { visible: sheetVisible, sheetAnim, overlayOpacity, open: openSheet, close: closeSheet } = useSheetAnimation();
@@ -129,6 +132,20 @@ export default function PlanMapaScreen() {
       setLocalMaterias(materias);
     }
   }, [materias]);
+
+  // Recalcular estadísticas locales cuando localMaterias cambie
+  useEffect(() => {
+    if (localMaterias.length > 0) {
+      const aprobadas = localMaterias.filter(m => m.estado === 'aprobada').length;
+      const regulares = localMaterias.filter(m => m.estado === 'regularizada').length;
+      const cursando = localMaterias.filter(m => m.estado === 'pendiente').length;
+      const restantes = localMaterias.filter(m => m.estado === 'bloqueada').length;
+      const total = localMaterias.length;
+      const porcentaje = total > 0 ? Math.round((aprobadas / total) * 100) : 0;
+
+      setLocalStats({ aprobadas, regulares, cursando, restantes, total, porcentaje });
+    }
+  }, [localMaterias]);
 
   // Recalcular cascada localmente (misma lógica que el hook)
   const recalcularCascada = useCallback((lista: MateriaSimulador[]): MateriaSimulador[] => {
@@ -220,8 +237,7 @@ export default function PlanMapaScreen() {
     );
     setLocalMaterias(recalcularCascada(nuevasMaterias));
 
-    // Sincronizar con API
-    updateMateriaEstado(materia.id, nuevoEstado);
+    // NOTA: No sincronizamos con API - el simulador es solo temporal
   }, [localMaterias, recalcularCascada, updateMateriaEstado, openBlockedSheet]);
 
   // Handler para long press (abrir sheet)
@@ -239,7 +255,7 @@ export default function PlanMapaScreen() {
       m.id === selectedMateria.id ? { ...m, estado: nuevoEstado } : m
     );
     setLocalMaterias(recalcularCascada(nuevasMaterias));
-    updateMateriaEstado(selectedMateria.id, nuevoEstado);
+    // NOTA: No sincronizamos con API - el simulador es solo temporal
   }, [selectedMateria, localMaterias, recalcularCascada, updateMateriaEstado]);
 
 
@@ -362,89 +378,90 @@ export default function PlanMapaScreen() {
 
   return (
     <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={SIMULADOR_COLORS.fondo} />
+      <StatusBar barStyle="light-content" backgroundColor={SIMULADOR_COLORS.fondo} />
 
-        {/* Header */}
-        <View style={styles.hudHeader}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backBtn}
-            accessibilityLabel="Volver"
-            accessibilityRole="button"
-          >
-            <Ionicons name="arrow-back" size={24} color={SIMULADOR_COLORS.aprobada} />
-          </TouchableOpacity>
+      {/* Header */}
+      <View style={styles.hudHeader}>
+        <TouchableOpacity
+          onPress={() => {
+            refetch(); // Resetear a datos reales al salir
+            router.back();
+          }}
+          style={styles.backBtn}
+          accessibilityLabel="Volver"
+          accessibilityRole="button"
+        >
+          <Ionicons name="arrow-back" size={24} color={SIMULADOR_COLORS.aprobada} />
+        </TouchableOpacity>
 
-          <View style={styles.headerCenter}>
-            <ProgressStats stats={stats} compact />
-          </View>
-
-          <TouchableOpacity
-            onPress={refetch}
-            style={styles.refreshBtn}
-            accessibilityLabel="Actualizar"
-            accessibilityRole="button"
-          >
-            <Ionicons name="refresh" size={24} color={SIMULADOR_COLORS.aprobada} />
-          </TouchableOpacity>
+        <View style={styles.headerCenter}>
+          <ProgressStats stats={localStats} compact />
         </View>
 
-        {/* Indicador de usuario no logueado */}
-        {!isLoggedIn && (
-          <View style={styles.guestBanner}>
-            <Ionicons name="information-circle" size={16} color="#FFD700" />
-            <Text style={styles.guestBannerText}>
-              Modo simulacion - inicia sesion para guardar tu progreso
-            </Text>
-          </View>
-        )}
-
-        {/* Canvas */}
-        <ScrollView style={styles.verticalScroll} contentContainerStyle={{ paddingBottom: 100 }}>
-          <ScrollView horizontal style={styles.horizontalScroll}>
-            <View
-              style={[
-                styles.canvas,
-                {
-                  width: canvasWidth,
-                  height: canvasHeight,
-                }
-              ]}
-            >
-              <Svg
-                height={canvasHeight}
-                width={canvasWidth}
-                style={styles.svgLayer}
-              >
-                {renderConnections()}
-              </Svg>
-              {renderNodes()}
-            </View>
-          </ScrollView>
-        </ScrollView>
-
-
-        {/* Sheet de detalle */}
-        <MateriaDetailSheet
-          materia={selectedMateria}
-          allMaterias={localMaterias}
-          visible={sheetVisible}
-          sheetAnim={sheetAnim}
-          overlayOpacity={overlayOpacity}
-          onClose={closeSheet}
-          onChangeEstado={handleSheetChangeEstado}
-        />
-
-        {/* Sheet de materia bloqueada */}
-        <BlockedMateriaSheet
-          materia={blockedMateria}
-          correlativasFaltantes={blockedCorrelativas}
-          visible={blockedSheetVisible}
-          sheetAnim={blockedSheetAnim}
-          overlayOpacity={blockedOverlayOpacity}
-          onClose={closeBlockedSheet}
-        />
+        <TouchableOpacity
+          onPress={refetch}
+          style={styles.refreshBtn}
+          accessibilityLabel="Actualizar"
+          accessibilityRole="button"
+        >
+          <Ionicons name="refresh" size={24} color={SIMULADOR_COLORS.aprobada} />
+        </TouchableOpacity>
       </View>
+
+      {/* Banner de Modo Simulación - siempre visible */}
+      <View style={styles.guestBanner}>
+        <Ionicons name="flask" size={16} color="#FFD700" />
+        <Text style={styles.guestBannerText}>
+          🧪 Modo Simulación - Los cambios NO se guardarán
+        </Text>
+      </View>
+
+      {/* Canvas */}
+      <ScrollView style={styles.verticalScroll} contentContainerStyle={{ paddingBottom: 100 }}>
+        <ScrollView horizontal style={styles.horizontalScroll}>
+          <View
+            style={[
+              styles.canvas,
+              {
+                width: canvasWidth,
+                height: canvasHeight,
+              }
+            ]}
+          >
+            <Svg
+              height={canvasHeight}
+              width={canvasWidth}
+              style={styles.svgLayer}
+            >
+              {renderConnections()}
+            </Svg>
+            {renderNodes()}
+          </View>
+        </ScrollView>
+      </ScrollView>
+
+
+      {/* Sheet de detalle */}
+      <MateriaDetailSheet
+        materia={selectedMateria}
+        allMaterias={localMaterias}
+        visible={sheetVisible}
+        sheetAnim={sheetAnim}
+        overlayOpacity={overlayOpacity}
+        onClose={closeSheet}
+        onChangeEstado={handleSheetChangeEstado}
+      />
+
+      {/* Sheet de materia bloqueada */}
+      <BlockedMateriaSheet
+        materia={blockedMateria}
+        correlativasFaltantes={blockedCorrelativas}
+        visible={blockedSheetVisible}
+        sheetAnim={blockedSheetAnim}
+        overlayOpacity={blockedOverlayOpacity}
+        onClose={closeBlockedSheet}
+      />
+    </View>
   );
 }
 

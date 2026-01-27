@@ -37,13 +37,13 @@ export default function LoginScreen() {
     ]).start();
 
     if (user || isGuest) {
-      router.replace('/home');
+      router.replace('/(tabs)');
     }
   }, [user, isGuest]);
 
   const syncAndNavigate = async () => {
     await DataRepository.syncGuestData();
-    router.replace('/home');
+    router.replace('/(tabs)');
   };
 
   const handleAppleCredential = (credential: any) => {

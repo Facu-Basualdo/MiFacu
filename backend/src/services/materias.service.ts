@@ -46,7 +46,7 @@ export class MateriasService {
 
     async getAllMaterias(): Promise<Materia[]> {
         return await this.materiaRepository.find({
-            relations: ['recordatorios', 'finales'],
+            relations: ['recordatorios', 'finales', 'correlativas'],
         });
     }
 }

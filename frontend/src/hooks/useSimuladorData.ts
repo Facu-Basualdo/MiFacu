@@ -266,10 +266,9 @@ export function useSimuladorData(): UseSimuladorDataReturn {
         correlativasBackend = await correlativasApi.getCorrelativas();
         if (correlativasBackend && correlativasBackend.length > 0) {
           usarCorrelativasBackend = true;
-          console.log(`Correlativas cargadas del backend: ${correlativasBackend.length} materias`);
         }
       } catch (e) {
-        console.warn('No se pudieron cargar correlativas del backend, usando hardcodeadas:', e);
+        // Fallback silencioso a correlativas hardcodeadas
       }
 
       // Crear mapa de correlativas por ID de materia (del backend o hardcodeadas)

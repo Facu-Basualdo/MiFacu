@@ -56,8 +56,6 @@ export const TaskItem = memo<TaskItemProps>(function TaskItem({
       style={[
         styles.taskItem,
         {
-          backgroundColor: theme.backgroundSecondary,
-          borderColor: separatorColor,
           opacity,
           transform: [{ scale }],
         },
@@ -66,6 +64,7 @@ export const TaskItem = memo<TaskItemProps>(function TaskItem({
       <TouchableOpacity
         onPress={handleComplete}
         style={styles.taskCheckbox}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         accessibilityLabel="Marcar tarea como completada"
         accessibilityRole="checkbox"
         accessibilityState={{ checked: false }}
@@ -91,7 +90,7 @@ export const TaskItem = memo<TaskItemProps>(function TaskItem({
           accessibilityLabel={`Tarea: ${text}. Toca para editar`}
           accessibilityRole="button"
         >
-          <Text style={[styles.taskText, { color: theme.text }]}>{text}</Text>
+          <Text style={[styles.taskText, { color: theme.text }]} numberOfLines={2}>{text}</Text>
         </TouchableOpacity>
       )}
     </Animated.View>
@@ -102,33 +101,30 @@ const styles = StyleSheet.create({
   taskItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginBottom: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
   },
   taskCheckbox: {
-    marginRight: 15,
-    padding: 2,
+    marginRight: 12,
   },
   checkboxCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     borderWidth: 2,
-    opacity: 0.6,
   },
   textContainer: {
     flex: 1,
   },
   taskText: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '400',
+    lineHeight: 21,
   },
   taskInputEdit: {
     flex: 1,
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '400',
     padding: 0,
   },
 });
