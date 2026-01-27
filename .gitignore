@@ -127,3 +127,13 @@ Icon
 
 # Optional REPL history
 .node_repl_history
+
+# ==========================================
+# 🤖 AI AGENTS CONFIG (local)
+# ==========================================
+.agents/
+.claude/
+.cursor/
+.gemini/
+.opencode/
+nul
