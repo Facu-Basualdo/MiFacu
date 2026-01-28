@@ -1,0 +1,13 @@
+{
+    "name": "mifacu-monorepo",
+    "version": "1.0.0",
+    "private": true,
+    "workspaces": [
+        "frontend",
+        "backend"
+    ],
+    "scripts": {
+        "frontend": "cd frontend && npm start",
+        "backend": "cd backend && npm start"
+    }
+}
