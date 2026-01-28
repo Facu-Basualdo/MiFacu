@@ -14,6 +14,7 @@ import usuarioMateriasRoutes from './routes/usuario-materias.routes';
 import syncRoutes from './routes/sync.routes';
 import linksRoutes from './routes/links.routes';
 import correlativasRoutes from './routes/correlativas.routes';
+import calificacionesCatedrasRoutes from './routes/calificaciones-catedras.routes';
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -34,6 +35,7 @@ app.use("/usuario-materias", usuarioMateriasRoutes);
 app.use("/sync", syncRoutes);
 app.use("/links", linksRoutes);
 app.use("/correlativas", correlativasRoutes);
+app.use("/calificaciones-catedras", calificacionesCatedrasRoutes);
 
 app.get('/', (req, res) => {
     res.status(200).send('MiFacu Backend is running');
