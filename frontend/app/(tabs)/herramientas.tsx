@@ -27,9 +27,10 @@ interface ToolItem {
 }
 
 const TOOLS: ToolItem[] = [
-  { id: 'simulador', icon: 'calculator', label: 'Simulador de Notas', subtitle: 'Planifica qué materias rendir', color: 'red', route: '/simulador' },
+  { id: 'simulador', icon: 'calculator', label: 'Simulador de correlativas', subtitle: 'Planifica qué materias rendir', color: 'red', route: '/simulador' },
+  { id: 'calificaciones', icon: 'chatbubbles', label: 'Reseñas de cátedras', subtitle: 'Opiniones de profesores y materias', color: 'tint', route: '/selectMateria' },
   { id: 'finales', icon: 'star', label: 'Finales', subtitle: 'Gestiona tus exámenes finales', color: 'blue', route: '/finales' },
-  { id: 'parciales', icon: 'calendar', label: 'Parciales', subtitle: 'Seguimiento de parciales', color: 'orange', route: '/parciales' },
+  { id: 'parciales', icon: 'calendar', label: 'Parciales/Entregas', subtitle: 'Seguimiento de parciales y entregas', color: 'orange', route: '/parciales' },
   { id: 'horarios', icon: 'time', label: 'Horarios', subtitle: 'Ver horarios de cursada', color: 'green', route: '/horarios' },
   { id: 'repositorio', icon: 'folder-open', label: 'Repositorio', subtitle: 'Links y recursos útiles', color: 'slate', route: '/repositorio' },
 ];
