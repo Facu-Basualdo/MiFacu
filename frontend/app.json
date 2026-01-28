@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.plaidlabs.mifacu",
+      "appleTeamId": "594RH9S646",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
