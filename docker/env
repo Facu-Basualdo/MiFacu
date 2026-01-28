@@ -1,5 +1,0 @@
-﻿PORT=4000
-DATABASE_URL=postgresql://postgres.lyyljkrkyiqjxuwsnzhx:S3aNPsa3iHwOsCYd@aws-1-sa-east-1.pooler.supabase.com:6543/postgres
-SUPABASE_URL=https://lyyljkrkyiqjxuwsnzhx.supabase.co
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-NODE_ENV=production
