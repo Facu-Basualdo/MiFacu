@@ -23,6 +23,7 @@ out/
 # ==========================================
 .env
 .env.local
+docker/env
 .env.development.local
 .env.test.local
 .env.production.local

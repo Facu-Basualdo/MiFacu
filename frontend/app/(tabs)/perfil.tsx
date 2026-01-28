@@ -22,6 +22,9 @@ import { Colors } from '../../src/constants/theme';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useAuth } from '../../src/context/AuthContext';
 import { materiasApi as api } from '../../src/services/api';
+import { supabase } from '../../src/config/supabase';
+import { CarreraModal } from '../../src/components/home';
+import { mifacuNavy, mifacuGold } from '../../src/constants/theme';
 
 interface Stats {
   aprobadas: number;
@@ -33,10 +36,11 @@ interface Stats {
 export default function PerfilScreen() {
   const router = useRouter();
   const { colorScheme, isDark, toggleTheme } = useTheme();
-  const { user, isGuest, signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const theme = Colors[colorScheme];
 
   const [privacyMode, setPrivacyMode] = useState(false);
+  const [showCarreraModal, setShowCarreraModal] = useState(false);
   const [stats, setStats] = useState<Stats>({ aprobadas: 0, regulares: 0, cursando: 0, totalPlan: 0 });
 
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -68,7 +72,9 @@ export default function PerfilScreen() {
       }
 
       // Load stats
-      const userId = user?.id || 'guest';
+      const userId = user?.id;
+      if (!userId) return;
+
       const materias = await api.getMateriasByUsuario(userId);
       const aprobadas = materias.filter((m: any) => m.estado === 'aprobado').length;
       const regulares = materias.filter((m: any) => m.estado === 'regular').length;
@@ -103,11 +109,24 @@ export default function PerfilScreen() {
         style: 'destructive',
         onPress: async () => {
           await signOut();
-          router.replace('/');
         },
       },
     ]);
-  }, [signOut, router]);
+  }, [signOut]);
+
+  const handleSelectCarrera = useCallback(async (carrera: string) => {
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: { carrera }
+      });
+      if (error) throw error;
+      setShowCarreraModal(false);
+      loadData();
+    } catch (error) {
+      console.error('Error updating carrera:', error);
+      Alert.alert('Error', 'No se pudo actualizar la carrera');
+    }
+  }, [loadData]);
 
   const progreso = stats.totalPlan > 0 ? Math.round((stats.aprobadas / stats.totalPlan) * 100) : 0;
 
@@ -154,17 +173,11 @@ export default function PerfilScreen() {
               />
             </View>
             <Text style={[styles.profileName, { color: theme.text }]}>
-              {user?.user_metadata?.full_name || 'Usuario Invitado'}
+              {user?.user_metadata?.full_name || 'Usuario miFACU'}
             </Text>
             <Text style={[styles.profileEmail, { color: theme.icon }]}>
-              {user?.email || 'Modo sin conexión'}
+              {user?.email || 'Sincronizado'}
             </Text>
-            {isGuest && (
-              <View style={[styles.guestBadge, { backgroundColor: theme.orange + '20' }]}>
-                <Ionicons name="person-outline" size={12} color={theme.orange} />
-                <Text style={[styles.guestBadgeText, { color: theme.orange }]}>Invitado</Text>
-              </View>
-            )}
           </View>
         </View>
 
@@ -270,6 +283,24 @@ export default function PerfilScreen() {
               <Ionicons name="chevron-forward" size={18} color={theme.separator} />
             </TouchableOpacity>
 
+            {/* Change Career */}
+            <TouchableOpacity
+              style={[styles.optionRow, { borderBottomColor: theme.separator }]}
+              onPress={() => setShowCarreraModal(true)}
+              activeOpacity={0.6}
+            >
+              <View style={[styles.optionIcon, { backgroundColor: mifacuNavy }]}>
+                <Ionicons name="brush" size={18} color={mifacuGold} />
+              </View>
+              <View style={styles.optionContent}>
+                <Text style={[styles.optionLabel, { color: theme.text }]}>Mi Carrera</Text>
+                <Text style={[styles.optionHint, { color: theme.icon }]}>
+                  {user?.user_metadata?.carrera || 'No seleccionada'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.separator} />
+            </TouchableOpacity>
+
             {/* Storage Info */}
             <View style={styles.optionRow}>
               <View style={[styles.optionIcon, { backgroundColor: theme.green }]}>
@@ -277,10 +308,10 @@ export default function PerfilScreen() {
               </View>
               <View style={styles.optionContent}>
                 <Text style={[styles.optionLabel, { color: theme.text }]}>
-                  {isGuest ? 'Datos Locales' : 'Sincronizado'}
+                  Sincronizado
                 </Text>
                 <Text style={[styles.optionHint, { color: theme.icon }]}>
-                  {isGuest ? 'Los datos se guardan en tu dispositivo' : 'Conectado con tu cuenta'}
+                  Conectado con tu cuenta
                 </Text>
               </View>
               <View style={[styles.statusDot, { backgroundColor: theme.green }]} />
@@ -297,7 +328,7 @@ export default function PerfilScreen() {
           >
             <Ionicons name="log-out-outline" size={20} color={theme.red} />
             <Text style={[styles.logoutText, { color: theme.red }]}>
-              {isGuest ? 'Salir del Modo Invitado' : 'Cerrar Sesión'}
+              Cerrar Sesión
             </Text>
           </TouchableOpacity>
         </View>
@@ -307,6 +338,15 @@ export default function PerfilScreen() {
 
         <View style={{ height: 120 }} />
       </Animated.ScrollView>
+
+      {/* CARRERA MODAL */}
+      <CarreraModal
+        visible={showCarreraModal}
+        onClose={() => setShowCarreraModal(false)}
+        onSelect={handleSelectCarrera}
+        theme={theme}
+        isDarkMode={isDark}
+      />
     </View>
   );
 }

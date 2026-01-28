@@ -48,7 +48,7 @@ const INITIAL_STATS: Stats = {
  * Hook that manages all home screen data loading and state
  */
 export function useHomeData(): UseHomeDataReturn {
-  const { user, isGuest, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -134,16 +134,19 @@ export function useHomeData(): UseHomeDataReturn {
         setLoading(true);
       }
 
-      if (!user && !isGuest) {
+      if (!user) {
         setLoading(false);
         return;
       }
 
-      const userId = user?.id || null;
+      const userId = user.id;
 
-      // Load tasks
-      const recordatorios = await DataRepository.getRecordatorios(isGuest);
-      setTasks(Array.isArray(recordatorios) ? recordatorios : []);
+      // Load tasks - solo mostrar tareas rápidas (tipo 'quick_task'), no parciales/entregas/finales
+      const recordatorios = await DataRepository.getRecordatorios();
+      const tareasRapidas = Array.isArray(recordatorios)
+        ? recordatorios.filter((r: any) => r.tipo === 'quick_task')
+        : [];
+      setTasks(tareasRapidas);
 
       if (userId) {
         const userMaterias: MateriaUsuario[] = await materiasApi.getMateriasByUsuario(userId);
@@ -166,10 +169,6 @@ export function useHomeData(): UseHomeDataReturn {
           (m) => String(m.estado).toLowerCase().includes('cursad') && m.dia && m.hora !== null
         );
         setProximaClase(calculateProximaClase(cursandoMaterias));
-      } else if (isGuest) {
-        setCarreraProgreso(0);
-        setStats(INITIAL_STATS);
-        setProximaClase(null);
       }
     } catch (error) {
       console.error('Error cargando progreso:', error);
@@ -177,7 +176,7 @@ export function useHomeData(): UseHomeDataReturn {
       setLoading(false);
       hasLoadedOnce.current = true;
     }
-  }, [authLoading, user, isGuest, calculateProximaClase]);
+  }, [authLoading, user, calculateProximaClase]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

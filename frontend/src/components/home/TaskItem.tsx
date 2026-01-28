@@ -3,13 +3,14 @@ import { View, Text, TouchableOpacity, TextInput, StyleSheet, Animated } from 'r
 import * as Haptics from 'expo-haptics';
 import { DataRepository } from '../../services/dataRepository';
 import type { ThemeColors, Recordatorio } from '../../types';
+import { mifacuNavy } from '../../constants/theme';
+import { useTheme } from '../../context/ThemeContext';
 
 interface TaskItemProps {
   task: Recordatorio;
   onDelete: () => void;
   theme: ThemeColors;
   separatorColor: string;
-  isGuest: boolean;
 }
 
 /**
@@ -21,8 +22,8 @@ export const TaskItem = memo<TaskItemProps>(function TaskItem({
   onDelete,
   theme,
   separatorColor,
-  isGuest,
 }) {
+  const { isDark: isDarkMode } = useTheme();
   const [isEditing, setIsEditing] = useState(false);
   const [text, setText] = useState(task.nombre);
 
@@ -33,12 +34,12 @@ export const TaskItem = memo<TaskItemProps>(function TaskItem({
     setIsEditing(false);
     if (text.trim() !== task.nombre) {
       try {
-        await DataRepository.updateRecordatorio(isGuest, task.id, { nombre: text.trim() });
+        await DataRepository.updateRecordatorio(task.id, { nombre: text.trim() });
       } catch (e) {
         console.error('Error updating task', e);
       }
     }
-  }, [text, task.nombre, task.id, isGuest]);
+  }, [text, task.nombre, task.id]);
 
   const handleComplete = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -65,11 +66,8 @@ export const TaskItem = memo<TaskItemProps>(function TaskItem({
         onPress={handleComplete}
         style={styles.taskCheckbox}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        accessibilityLabel="Marcar tarea como completada"
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: false }}
       >
-        <View style={[styles.checkboxCircle, { borderColor: theme.tint }]} />
+        <View style={[styles.checkboxCircle, { borderColor: theme.separator, backgroundColor: isDarkMode ? 'transparent' : 'white' }]} />
       </TouchableOpacity>
 
       {isEditing ? (
@@ -90,7 +88,7 @@ export const TaskItem = memo<TaskItemProps>(function TaskItem({
           accessibilityLabel={`Tarea: ${text}. Toca para editar`}
           accessibilityRole="button"
         >
-          <Text style={[styles.taskText, { color: theme.text }]} numberOfLines={2}>{text}</Text>
+          <Text style={[styles.taskText, { color: theme.text, fontWeight: '500' }]} numberOfLines={2}>{text}</Text>
         </TouchableOpacity>
       )}
     </Animated.View>

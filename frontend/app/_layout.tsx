@@ -1,4 +1,4 @@
-import { Stack, useRouter, useSegments } from "expo-router";
+import { Stack, useRouter, usePathname } from "expo-router";
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
 import { ThemeProvider, useTheme } from "../src/context/ThemeContext";
 import { View, ActivityIndicator, StatusBar } from "react-native";
@@ -7,31 +7,29 @@ import { Colors } from "../src/constants/theme";
 import { useEffect } from "react";
 
 function RootNavigator() {
-  const { user, isGuest, loading } = useAuth();
+  const { user, loading } = useAuth();
   const { colorScheme, isDark } = useTheme();
   const theme = Colors[colorScheme];
   const router = useRouter();
-  const segments = useSegments();
-
-  const isLoggedIn = !!user || isGuest;
+  const pathname = usePathname();
 
   // Handle auth state changes
   useEffect(() => {
     if (loading) return;
 
-    const inAuthGroup = segments[0] === "(tabs)";
-    // Lista de rutas permitidas para usuarios logueados (pantallas stack)
-    const allowedStackRoutes = ["finales", "parciales", "simulador", "horarios", "repositorio", "calificaciones", "selectMateria", "detalle-materia", "plan-estudios", "home", "mis-materias", "agenda"];
-    const inAllowedStack = allowedStackRoutes.includes(segments[0]);
+    const isLoggedIn = !!user;
 
-    if (isLoggedIn && !inAuthGroup && !inAllowedStack) {
-      // Logged in but not in tabs or allowed stack, redirect to tabs
-      router.replace("/(tabs)");
-    } else if (!isLoggedIn && inAuthGroup) {
-      // Not logged in but in tabs, redirect to login
+    // Si la ruta es "/" o "/index", estamos en el Login
+    const isAtLogin = pathname === "/" || pathname === "/index";
+
+    if (!isLoggedIn && !isAtLogin) {
+      // Forzar salida inmediata si no hay sesión y no estamos en Login
       router.replace("/");
+    } else if (isLoggedIn && isAtLogin) {
+      // Si hay sesión y estamos en el Login, ir al dashboard
+      router.replace("/(tabs)");
     }
-  }, [isLoggedIn, loading, segments]);
+  }, [user, loading, pathname]);
 
   if (loading) {
     return (
@@ -39,6 +37,13 @@ function RootNavigator() {
         <ActivityIndicator size="large" color={theme.tint} />
       </View>
     );
+  }
+
+  // Guard de montaje: Si no hay usuario y se intenta acceder a una ruta protegida,
+  // devolvemos null para forzar el desmontaje mientras el useEffect redirige.
+  const isPublicRoute = pathname === "/" || pathname === "/index";
+  if (!user && !isPublicRoute) {
+    return null;
   }
 
   return (
@@ -72,7 +77,6 @@ function RootNavigator() {
         <Stack.Screen name="plan-estudios" options={{ presentation: 'card' }} />
 
         {/* Legacy routes */}
-        <Stack.Screen name="home" />
         <Stack.Screen name="mis-materias" options={{ presentation: 'card' }} />
       </Stack>
     </View>

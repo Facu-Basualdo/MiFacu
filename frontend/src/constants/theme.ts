@@ -5,25 +5,29 @@
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+const tintColorLight = '#1E3A8A'; // miFACU Navy
+const tintColorDark = '#FFFFFF';
+
+export const mifacuNavy = '#1E3A8A';
+export const mifacuGold = '#B48B40';
+export const mifacuBackground = '#F8FAFC';
 
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#F2F2F7', // SystemGroupedBackground
-    backgroundSecondary: '#FFFFFF', // SecondarySystemGroupedBackground
+    text: '#0F172A', // Slate 900 para mejor legibilidad académica
+    background: mifacuBackground,
+    backgroundSecondary: '#FFFFFF',
     card: '#FFFFFF',
-    tint: '#007AFF', // SystemBlue
-    icon: '#8E8E93',
-    tabIconDefault: '#8E8E93',
-    tabIconSelected: '#007AFF',
-    separator: '#C6C6C8',
-    blue: '#007AFF',
-    orange: '#FF9500',
-    green: '#34C759',
-    red: '#FF3B30',
-    slate: '#8E8E93',
+    tint: mifacuNavy,
+    icon: '#64748B', // Slate 500
+    tabIconDefault: '#94A3B8', // Slate 400
+    tabIconSelected: mifacuNavy,
+    separator: '#E2E8F0', // Slate 200
+    blue: mifacuNavy,
+    orange: mifacuGold,
+    green: '#10B981', // Emerald 500
+    red: '#EF4444', // Red 500
+    slate: '#64748B',
   },
   dark: {
     text: '#FFFFFF',

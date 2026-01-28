@@ -23,7 +23,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Colors } from '../../src/constants/theme';
+import { supabase } from '../../src/config/supabase';
+import { Colors, mifacuNavy, mifacuGold } from '../../src/constants/theme';
 import { useThemeColor } from '../../src/hooks/use-theme-color';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useAuth } from '../../src/context/AuthContext';
@@ -40,6 +41,7 @@ import {
   SwipeableTask,
   TaskItem,
   StatsModal,
+  CarreraModal,
 } from '../../src/components/home';
 
 // Types
@@ -65,11 +67,13 @@ const DEFAULT_SHORTCUTS: ShortcutId[] = ['finales', 'parciales', 'simulador', 'h
 const ShortcutCard = React.memo(({
   shortcut,
   theme,
+  isDarkMode,
   cardColor,
   onPress
 }: {
   shortcut: typeof AVAILABLE_SHORTCUTS[number];
   theme: ThemeColors;
+  isDarkMode: boolean;
   cardColor: string;
   onPress: () => void;
 }) => {
@@ -106,14 +110,14 @@ const ShortcutCard = React.memo(({
         onPressOut={handlePressOut}
         style={[styles.shortcutCard, { backgroundColor: cardColor }]}
       >
-        <View style={[styles.shortcutIconContainer, { backgroundColor: getColor(shortcut.color) }]}>
-          <Ionicons name={shortcut.icon as any} size={22} color="white" />
+        <View style={[styles.shortcutIconContainer, { backgroundColor: isDarkMode ? getColor(shortcut.color) : mifacuNavy }]}>
+          <Ionicons name={shortcut.icon as any} size={22} color={isDarkMode ? "white" : mifacuGold} />
         </View>
         <View style={styles.shortcutContent}>
-          <Text style={[styles.shortcutLabel, { color: theme.text }]} numberOfLines={1}>
+          <Text style={[styles.shortcutLabel, { color: theme.text, fontWeight: '600' }]} numberOfLines={1}>
             {shortcut.label}
           </Text>
-          <Text style={[styles.shortcutSubtitle, { color: theme.icon }]} numberOfLines={1}>
+          <Text style={[styles.shortcutSubtitle, { color: theme.icon, fontSize: 12 }]} numberOfLines={1}>
             {shortcut.subtitle}
           </Text>
         </View>
@@ -125,8 +129,8 @@ const ShortcutCard = React.memo(({
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, isGuest } = useAuth();
-  const { colorScheme, isDark } = useTheme();
+  const { user } = useAuth();
+  const { colorScheme, isDark: isDarkMode } = useTheme();
   const theme = Colors[colorScheme] as ThemeColors;
 
   // Data hook
@@ -151,6 +155,7 @@ export default function HomeScreen() {
 
   // Stats modal
   const [showStatsModal, setShowStatsModal] = useState(false);
+  const [showCarreraModal, setShowCarreraModal] = useState(false);
   const statsOverlayOpacity = useRef(new Animated.Value(0)).current;
   const statsSheetAnim = useRef(new Animated.Value(0)).current;
 
@@ -179,6 +184,18 @@ export default function HomeScreen() {
   const textColor = useThemeColor({}, 'text');
   const cardColor = useThemeColor({}, 'backgroundSecondary');
   const separatorColor = useThemeColor({}, 'separator');
+
+  const hour = new Date().getHours();
+  const currentGreeting = hour < 12 ? 'Buenos días' : hour < 20 ? 'Hola' : 'Buenas noches';
+  const userName = user?.user_metadata?.full_name?.split(' ')[0] || 'Estudiante';
+  const userCarrera = user?.user_metadata?.carrera;
+
+  // Onboarding: Si no hay carrera, mostrar modal
+  useEffect(() => {
+    if (user && !userCarrera && !loading) {
+      setTimeout(() => setShowCarreraModal(true), 1500); // Pequeño delay para dejar cargar el dashboard
+    }
+  }, [user, userCarrera, loading]);
 
   // Load shortcuts from storage
   useEffect(() => {
@@ -264,7 +281,7 @@ export default function HomeScreen() {
     // Guardar en background
     try {
       setAddingTask(true);
-      const created = await DataRepository.createRecordatorio(isGuest, {
+      const created = await DataRepository.createRecordatorio({
         nombre: taskText,
         descripcion: 'Tarea Rápida',
         fecha: optimisticTask.fecha,
@@ -282,19 +299,19 @@ export default function HomeScreen() {
     } finally {
       setAddingTask(false);
     }
-  }, [newTask, isGuest, setTasks, addingTask]);
+  }, [newTask, setTasks, addingTask]);
 
   const handleCompleteTask = useCallback(
     async (id: number) => {
       try {
         setTasks((prev) => prev.filter((t) => t.id !== id));
-        await DataRepository.deleteRecordatorio(isGuest, id);
+        await DataRepository.deleteRecordatorio(id);
       } catch (error) {
         console.error('Error deleting task:', error);
         loadData();
       }
     },
-    [isGuest, setTasks, loadData]
+    [setTasks, loadData]
   );
 
   // Quick access handlers
@@ -334,6 +351,20 @@ export default function HomeScreen() {
     }
   }, [tempShortcuts]);
 
+  const handleSelectCarrera = useCallback(async (carrera: string) => {
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: { carrera }
+      });
+      if (error) throw error;
+      setShowCarreraModal(false);
+      loadData(); // Re-fetch to update progress card
+    } catch (error) {
+      console.error('Error selecting carrera:', error);
+      Alert.alert('Error', 'No se pudo guardar la carrera');
+    }
+  }, [loadData]);
+
   // Get active shortcuts data
   const activeShortcuts = selectedShortcuts
     .map((id) => AVAILABLE_SHORTCUTS.find((s) => s.id === id))
@@ -342,7 +373,7 @@ export default function HomeScreen() {
   return (
     <View style={[styles.container, { backgroundColor }]}>
       <StatusBar
-        barStyle={isDark ? 'light-content' : 'dark-content'}
+        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
         backgroundColor="transparent"
         translucent
       />
@@ -351,7 +382,7 @@ export default function HomeScreen() {
       <Animated.View style={[styles.headerInline, { opacity: headerOpacity }]}>
         <BlurView
           intensity={80}
-          tint={colorScheme}
+          tint={isDarkMode ? 'dark' : 'light'}
           style={StyleSheet.absoluteFill}
         />
         <View style={[styles.headerBorder, { borderBottomColor: theme.separator }]} />
@@ -394,59 +425,62 @@ export default function HomeScreen() {
           <SafeAreaView edges={['top']}>
             <View style={styles.headerTop}>
               <View>
-                <Text style={[styles.headerLabel, { color: theme.icon }]}>MI PANEL</Text>
-                <Text style={[styles.headerTitle, { color: textColor }]}>
-                  Hola, {user?.user_metadata?.full_name?.split(' ')[0] || 'Usuario'} 👋
+                <Text style={[styles.headerLabel, { color: theme.icon, letterSpacing: 1.5, fontSize: 11, fontWeight: '700' }]}>DASHBOARD DE ESTUDIANTE</Text>
+                <Text style={[styles.headerTitle, { color: textColor, fontWeight: '900' }]}>
+                  {currentGreeting}, {userName}
                 </Text>
               </View>
               <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => router.push('/(tabs)/perfil')}
-                style={[styles.avatarContainer, { borderColor: theme.tint + '40' }]}
+                onPress={() => router.push('/perfil')}
+                activeOpacity={0.8}
+                style={[
+                  styles.headerAvatarContainer,
+                  {
+                    borderColor: isDarkMode ? theme.separator : mifacuGold,
+                    borderWidth: 2,
+                    padding: 2,
+                    borderRadius: 24
+                  }
+                ]}
               >
                 <Image
                   source={{ uri: user?.user_metadata?.avatar_url || 'https://i.pravatar.cc/100?img=33' }}
-                  style={styles.avatar}
+                  style={styles.avatarLarge}
                 />
               </TouchableOpacity>
             </View>
 
-            {/* PROGRESS BAR */}
-            <View style={styles.progressSection}>
-              <Pressable onPress={openStatsModal}>
-                <View style={styles.progressInfo}>
-                  <TouchableOpacity
-                    style={styles.progressRow}
-                    onPress={handlePrivacyToggle}
-                    activeOpacity={0.6}
-                  >
-                    <Text style={[styles.progressText, { color: theme.icon }]}>Progreso de Carrera</Text>
-                    <Ionicons
-                      name={privacyMode ? 'eye-off-outline' : 'eye-outline'}
-                      size={16}
-                      color={theme.icon}
-                      style={styles.progressIcon}
+            {/* PROGRESS CARD - Mockup Style */}
+            <View style={[styles.progressCard, { backgroundColor: cardColor }]}>
+              <Pressable onPress={openStatsModal} style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}>
+                <View style={[styles.progressSectionLabelContainer, { backgroundColor: isDarkMode ? theme.separator : mifacuNavy }]}>
+                  <Text style={[styles.progressSectionLabel, { color: 'white' }]}>CARRERA</Text>
+                </View>
+                <View style={styles.progressContent}>
+                  <View style={styles.progressInfo}>
+                    <Text style={[styles.progressSubtitle, { color: theme.icon }]} numberOfLines={1}>
+                      {user?.user_metadata?.carrera || 'Lic. en Administración'}
+                    </Text>
+                    <Text style={[styles.progressPercentage, { color: isDarkMode ? theme.tint : mifacuNavy, fontWeight: '800' }]}>
+                      {privacyMode ? '•••' : `${carreraProgreso}% Completo`}
+                    </Text>
+                  </View>
+                  <View style={[styles.progressBarBg, { backgroundColor: isDarkMode ? theme.separator + '40' : '#E2E8F0' }]}>
+                    <Animated.View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          width: privacyMode ? '0%' : `${carreraProgreso}%`,
+                          backgroundColor: isDarkMode ? theme.tint : mifacuGold,
+                          opacity: privacyMode ? 0 : 1,
+                        },
+                      ]}
                     />
-                  </TouchableOpacity>
-                  <Text style={[styles.progressPercentage, { color: privacyMode ? theme.icon : theme.tint }]}>
-                    {privacyMode ? '•••' : `${carreraProgreso}%`}
-                  </Text>
+                  </View>
                 </View>
-                <View style={[styles.progressBarBg, { backgroundColor: theme.separator + '40' }]}>
-                  <Animated.View
-                    style={[
-                      styles.progressBarFill,
-                      {
-                        width: privacyMode ? '0%' : `${carreraProgreso}%`,
-                        backgroundColor: theme.tint,
-                        opacity: privacyMode ? 0 : 1,
-                      },
-                    ]}
-                  />
-                  {privacyMode && (
-                    <View style={[StyleSheet.absoluteFill, styles.progressPrivacy, { backgroundColor: theme.separator }]} />
-                  )}
-                </View>
+                {privacyMode && (
+                  <View style={[StyleSheet.absoluteFill, styles.progressPrivacy, { backgroundColor: theme.separator }]} />
+                )}
               </Pressable>
             </View>
           </SafeAreaView>
@@ -466,18 +500,23 @@ export default function HomeScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.nextStepPill,
-                { backgroundColor: theme.tint, opacity: pressed ? 0.9 : 1 },
+                {
+                  backgroundColor: isDarkMode ? theme.tint : mifacuNavy,
+                  opacity: pressed ? 0.9 : 1,
+                  borderWidth: isDarkMode ? 0 : 1,
+                  borderColor: mifacuGold + '30'
+                },
               ]}
               onPress={() => router.push('/horarios')}
             >
               <View style={styles.pillHeader}>
-                <View style={styles.pillBadge}>
+                <View style={[styles.pillBadge, { backgroundColor: isDarkMode ? 'rgba(255,255,255,0.2)' : mifacuGold }]}>
                   <Ionicons name="notifications" size={14} color="white" />
                   <Text style={styles.pillBadgeText}>{proximaClase.tipo}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
               </View>
-              <Text style={styles.pillMateria}>{proximaClase.materia}</Text>
+              <Text style={[styles.pillMateria, { color: 'white', fontWeight: '800' }]}>{proximaClase.materia}</Text>
               <View style={styles.pillFooter}>
                 <View style={styles.pillInfoItem}>
                   <Ionicons name="time" size={14} color="rgba(255,255,255,0.8)" />
@@ -514,6 +553,7 @@ export default function HomeScreen() {
                     <ShortcutCard
                       shortcut={shortcut}
                       theme={theme}
+                      isDarkMode={isDarkMode}
                       cardColor={cardColor}
                       onPress={() => router.push(shortcut.route as any)}
                     />
@@ -525,12 +565,14 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            {/* QUICK TASKS SECTION - iOS Reminders Style */}
+            {/* QUICK TASKS SECTION - Mockup Style */}
             <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.icon }]}>TAREAS RÁPIDAS</Text>
-              <View style={[styles.tasksContainer, { backgroundColor: cardColor }]}>
-                {/* Task Input - Always visible button */}
-                <View style={styles.taskInputRow}>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: isDarkMode ? theme.text : mifacuNavy }]}>TAREAS RÁPIDAS</Text>
+              </View>
+              <View style={[styles.tasksContainer, { backgroundColor: cardColor, borderWidth: isDarkMode ? 0 : 1, borderColor: '#E2E8F0' }]}>
+                {/* Task Input */}
+                <View style={[styles.taskInputRow, { backgroundColor: isDarkMode ? 'transparent' : '#F8FAFC' }]}>
                   <TextInput
                     placeholder="Nueva tarea..."
                     placeholderTextColor={theme.icon}
@@ -548,7 +590,7 @@ export default function HomeScreen() {
                     style={({ pressed }) => [
                       styles.addTaskButton,
                       {
-                        backgroundColor: newTask.trim() ? theme.tint : theme.separator,
+                        backgroundColor: newTask.trim() ? (isDarkMode ? theme.tint : mifacuNavy) : theme.separator,
                         opacity: pressed && newTask.trim() ? 0.7 : 1,
                         transform: [{ scale: pressed && newTask.trim() ? 0.9 : 1 }],
                       },
@@ -583,7 +625,6 @@ export default function HomeScreen() {
                             onDelete={() => handleCompleteTask(task.id)}
                             theme={theme}
                             separatorColor={separatorColor}
-                            isGuest={isGuest}
                           />
                         </SwipeableTask>
                       </View>
@@ -618,7 +659,16 @@ export default function HomeScreen() {
         }}
       />
 
-      {/* EDIT SHORTCUTS MODAL - iOS Settings Style */}
+      {/* CARRERA MODAL (Onboarding) */}
+      <CarreraModal
+        visible={showCarreraModal}
+        onClose={() => setShowCarreraModal(false)}
+        onSelect={handleSelectCarrera}
+        theme={theme}
+        isDarkMode={isDarkMode}
+      />
+
+      {/* EDIT SHORTCUTS MODAL */}
       <Modal
         visible={showEditModal}
         animationType="slide"
@@ -643,11 +693,11 @@ export default function HomeScreen() {
                 Selecciona los accesos que quieres ver en tu inicio. Puedes elegir entre 2 y 5.
               </Text>
 
-              {/* Options List - iOS Settings Style */}
+              {/* Options List */}
               <View style={[styles.optionsList, { backgroundColor: cardColor }]}>
                 {AVAILABLE_SHORTCUTS.map((shortcut, index) => {
                   const isSelected = tempShortcuts.includes(shortcut.id);
-                  const getColor = (colorName: string) => theme[colorName as keyof ThemeColors] || theme.tint;
+                  const getOptColor = (colorName: string) => theme[colorName as keyof ThemeColors] || theme.tint;
 
                   return (
                     <TouchableOpacity
@@ -662,7 +712,7 @@ export default function HomeScreen() {
                         },
                       ]}
                     >
-                      <View style={[styles.optionIconBox, { backgroundColor: getColor(shortcut.color) }]}>
+                      <View style={[styles.optionIconBox, { backgroundColor: getOptColor(shortcut.color) }]}>
                         <Ionicons name={shortcut.icon as any} size={18} color="white" />
                       </View>
                       <View style={styles.optionInfo}>
@@ -741,53 +791,90 @@ const styles = StyleSheet.create({
   },
   headerLabel: {
     fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.8,
+    fontWeight: '700',
+    letterSpacing: 1.2,
     marginBottom: 4,
     textTransform: 'uppercase',
   },
-  headerTitle: { fontSize: 28, fontWeight: '700', letterSpacing: -0.5 },
-  avatarContainer: { borderWidth: 2, padding: 2, borderRadius: 50 },
-  avatar: { width: 44, height: 44, borderRadius: 22 },
+  headerTitle: { fontSize: 28, fontWeight: '900', letterSpacing: -0.5 },
+  headerAvatarContainer: { borderWidth: 2, padding: 2, borderRadius: 50 },
+  avatarLarge: { width: 44, height: 44, borderRadius: 22 },
 
-  // Progress
-  progressSection: { marginTop: 5 },
+  // Progress Card - Mockup Style
+  progressCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginTop: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  progressSectionLabelContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+    borderBottomRightRadius: 10,
+  },
+  progressSectionLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
+  progressContent: {
+    padding: 16,
+  },
   progressInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-end',
+    marginBottom: 12,
   },
-  progressRow: { flexDirection: 'row', alignItems: 'center' },
-  progressText: { fontSize: 13, fontWeight: '500' },
-  progressIcon: { marginLeft: 6, opacity: 0.8 },
-  progressPercentage: { fontSize: 13, fontWeight: '600' },
-  progressBarBg: { height: 8, borderRadius: 4, width: '100%', overflow: 'hidden' },
-  progressBarFill: { height: '100%', borderRadius: 4 },
-  progressPrivacy: { borderRadius: 4, opacity: 0.2 },
+  progressSubtitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 10,
+  },
+  progressPercentage: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  progressBarBg: {
+    height: 10,
+    borderRadius: 5,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 5,
+  },
+  progressPrivacy: { borderRadius: 20, opacity: 0.2 },
 
   scrollView: { flex: 1 },
   scrollContent: { paddingBottom: 120 },
 
-  section: { marginBottom: 24, paddingHorizontal: 20 },
+  section: { marginBottom: 28, paddingHorizontal: 20 },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
     paddingHorizontal: 4,
   },
   sectionTitle: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '800',
     textTransform: 'uppercase',
-    letterSpacing: 0.3,
+    letterSpacing: 1.2,
   },
   editButton: { paddingVertical: 4, paddingHorizontal: 8 },
   editButtonText: { fontSize: 15, fontWeight: '500' },
 
   // Notification pill
-  inlinePillContainer: { paddingHorizontal: 20, marginBottom: 24 },
+  inlinePillContainer: { paddingHorizontal: 20, marginBottom: 24, marginTop: 4 },
   nextStepPill: {
     padding: 18,
     borderRadius: 16,
@@ -806,7 +893,6 @@ const styles = StyleSheet.create({
   pillBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
@@ -819,9 +905,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   pillMateria: {
-    color: 'white',
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
     marginBottom: 12,
     letterSpacing: -0.3,
   },
@@ -842,22 +927,27 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
 
-  // Shortcuts - iOS Settings/Table Style
+  // Shortcuts
   shortcutsContainer: {
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   shortcutCardWrapper: {},
   shortcutCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 16,
   },
   shortcutIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -865,23 +955,28 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 14,
   },
-  shortcutLabel: { fontSize: 16, fontWeight: '500' },
+  shortcutLabel: { fontSize: 16, fontWeight: '600' },
   shortcutSubtitle: { fontSize: 13, marginTop: 1 },
   shortcutDivider: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: 62,
+    marginLeft: 66,
   },
 
-  // Tasks - iOS Reminders Style
+  // Tasks
   tasksContainer: {
-    borderRadius: 12,
+    borderRadius: 18,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
   },
   taskInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     gap: 12,
   },
   taskInput: {
@@ -891,9 +986,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   addTaskButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -943,7 +1038,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Options List - iOS Settings Style
   optionsList: {
     marginHorizontal: 20,
     borderRadius: 12,

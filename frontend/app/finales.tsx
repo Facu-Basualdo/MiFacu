@@ -28,16 +28,7 @@ import { useAuth } from '../src/context/AuthContext';
 import { Colors } from '../src/constants/theme';
 import { materiasApi } from '../src/services/api';
 
-// Configuración de notificaciones
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+// La configuración del handler ahora está centralizada en src/utils/notifications.ts
 
 const { width, height } = Dimensions.get('window');
 const CARD_MARGIN = 20;
@@ -436,15 +427,34 @@ export default function FinalesScreen() {
           fechaExamen.setHours(h, min, 0, 0);
 
           const scheduledDate = new Date(fechaExamen.getTime() - anticipacion * 60000);
+          const ahora = new Date();
+          const finalId = response.id || response.data?.id;
 
-          if (scheduledDate > new Date()) {
-            const finalId = response.id || response.data?.id;
+          // Si la fecha programada ya pasó pero anticipación es 0 (Momento),
+          // enviar notificación inmediata (en 3 segundos)
+          if (scheduledDate <= ahora && anticipacion === 0) {
+            const fechaInmediata = new Date(ahora.getTime() + 3000);
             await Notifications.scheduleNotificationAsync({
               identifier: finalId.toString(),
               content: {
                 title: `📚 ¡Examen de ${selectedMateriaNombre}!`,
-                body: `Mañana tienes el final de ${selectedMateriaNombre}. ¡Mucho éxito!`,
+                body: `¡Recordatorio inmediato para ${selectedMateriaNombre}!`,
                 data: { finalId },
+                sound: true,
+              },
+              trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: fechaInmediata
+              } as Notifications.NotificationTriggerInput,
+            });
+          } else if (scheduledDate > ahora) {
+            await Notifications.scheduleNotificationAsync({
+              identifier: finalId.toString(),
+              content: {
+                title: `📚 ¡Examen de ${selectedMateriaNombre}!`,
+                body: `${anticipacion >= 1440 ? 'Mañana' : 'Pronto'} tienes el final de ${selectedMateriaNombre}. ¡Mucho éxito!`,
+                data: { finalId },
+                sound: true,
               },
               trigger: {
                 type: Notifications.SchedulableTriggerInputTypes.DATE,

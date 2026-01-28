@@ -15,7 +15,7 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { isGuest, user } = useAuth();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
 
   // Animaciones usando el core de React Native (máximo de estabilidad)
@@ -36,35 +36,32 @@ export default function LoginScreen() {
       })
     ]).start();
 
-    if (user || isGuest) {
+    if (user) {
       router.replace('/(tabs)');
     }
-  }, [user, isGuest]);
+  }, [user]);
 
-  const syncAndNavigate = async () => {
-    await DataRepository.syncGuestData();
-    router.replace('/(tabs)');
-  };
-
-  const handleAppleCredential = (credential: any) => {
+  const handleAppleCredential = async (credential: any) => {
     if (credential.identityToken) {
-      (async () => {
-        try {
-          setLoading(true);
-          const { data, error } = await supabase.auth.signInWithIdToken({
-            provider: 'apple',
-            token: credential.identityToken,
-          });
+      try {
+        setLoading(true);
+        const { data, error } = await supabase.auth.signInWithIdToken({
+          provider: 'apple',
+          token: credential.identityToken,
+        });
 
-          if (error) throw error;
-          await syncAndNavigate();
-        } catch (error: any) {
-          console.error('Error en Supabase Apple Auth:', error);
-          Alert.alert("Error de Apple", error.message);
-        } finally {
-          setLoading(false);
-        }
-      })();
+        if (error) throw error;
+
+        // Si es el primer login, Apple nos manda el nombre.
+        // Podríamos actualizar el perfil si fuera necesario, 
+        // pero Supabase ya gestiona el registro básico.
+        router.replace('/(tabs)');
+      } catch (error: any) {
+        console.error('Error en Supabase Apple Auth:', error);
+        Alert.alert("Error de Apple", error.message);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 

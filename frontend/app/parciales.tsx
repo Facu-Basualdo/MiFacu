@@ -423,14 +423,33 @@ export default function ParcialesScreen() {
           fechaExamen.setHours(h, min, 0, 0);
 
           const scheduledDate = new Date(fechaExamen.getTime() - anticipacion * 60000);
+          const ahora = new Date();
 
-          if (scheduledDate > new Date()) {
+          // Si la fecha programada ya pasó pero anticipación es 0 (Momento),
+          // enviar notificación inmediata (en 3 segundos para dar tiempo a que se guarde)
+          if (scheduledDate <= ahora && anticipacion === 0) {
+            const fechaInmediata = new Date(ahora.getTime() + 3000); // 3 segundos
             await Notifications.scheduleNotificationAsync({
               identifier: newId.toString(),
               content: {
                 title: `📅 ${nuevoTipo}: ${nuevoTitulo}`,
-                body: `Recordatorio: ${nuevoTitulo} es mañana. ¡Prepárate!`,
+                body: `¡Recordatorio inmediato para ${nuevoTitulo}!`,
                 data: { id: newId },
+                sound: true,
+              },
+              trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: fechaInmediata
+              } as Notifications.NotificationTriggerInput,
+            });
+          } else if (scheduledDate > ahora) {
+            await Notifications.scheduleNotificationAsync({
+              identifier: newId.toString(),
+              content: {
+                title: `📅 ${nuevoTipo}: ${nuevoTitulo}`,
+                body: `Recordatorio: ${nuevoTitulo} es ${anticipacion >= 1440 ? 'mañana' : 'pronto'}. ¡Prepárate!`,
+                data: { id: newId },
+                sound: true,
               },
               trigger: {
                 type: Notifications.SchedulableTriggerInputTypes.DATE,

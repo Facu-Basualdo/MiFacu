@@ -10,4 +10,5 @@ export { StatItem } from './StatItem';
 export { SwipeableTask } from './SwipeableTask';
 export { TaskItem } from './TaskItem';
 export { StatsModal } from './StatsModal';
+export { CarreraModal } from './CarreraModal';
 export { ProfileModal } from './ProfileModal';
