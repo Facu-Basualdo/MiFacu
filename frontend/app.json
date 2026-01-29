@@ -48,6 +48,7 @@
       "expo-web-browser",
       "expo-secure-store",
       "expo-apple-authentication",
+      "./plugins/withFollyFix",
       [
         "expo-build-properties",
         {
