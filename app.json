@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "629f2491-d6a0-4c1c-863b-afe488064753"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.plaidlabs.mifacu",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}
