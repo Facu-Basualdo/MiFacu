@@ -9,10 +9,5 @@
     "scripts": {
         "frontend": "cd frontend && npm start",
         "backend": "cd backend && npm start"
-    },
-    "dependencies": {
-        "expo": "~54.0.31",
-        "react-native": "0.81.5",
-        "expo-router": "~6.0.21"
     }
 }
