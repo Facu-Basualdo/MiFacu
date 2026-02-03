@@ -1,26 +1,25 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   Animated,
-  Easing,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  Pressable,
   View,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
-// Zoom deshabilitado temporalmente para estabilidad
-// import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Svg, { Circle, Path } from 'react-native-svg';
+import { BlurView } from 'expo-blur';
+import Svg, { Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSimuladorData, MateriaSimulador, SimuladorStats } from '../src/hooks/useSimuladorData';
 import { useSheetAnimation } from '../src/hooks/useSheetAnimation';
 import { MateriaDetailSheet } from '../src/components/simulador/MateriaDetailSheet';
-import { ProgressStats } from '../src/components/simulador/ProgressStats';
 import { BlockedMateriaSheet, CorrelativaFaltante } from '../src/components/simulador/BlockedMateriaSheet';
 import {
   SIMULADOR_COLORS,
@@ -29,92 +28,229 @@ import {
   EstadoVisual,
 } from '../src/utils/estadoMapper';
 
-// --- CONFIGURACION VISUAL ---
-const COL_WIDTH = 120; // Aumentado para mejor accesibilidad
-const ROW_HEIGHT = 180;
-const MARGIN_X = 25;
-const OFFSET_X = 20;
-const OFFSET_Y = 40;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const TOTAL_LEVELS = 5;
-const ITEMS_PER_LEVEL = 9; // Nivel 2 tiene 9 materias (el máximo)
+// Configuración visual optimizada
+const NODE_SIZE = 100;
+const NODE_SPACING_X = 16;
+const NODE_SPACING_Y = 140;
+const PADDING_X = 20;
+const PADDING_Y = 24;
 
-const AnimatedPath = Animated.createAnimatedComponent(Path);
-
-// --- COMPONENTE CABLE ---
-interface CableProps {
+// Componente de conexión entre materias
+interface ConnectionProps {
   x1: number;
   y1: number;
   x2: number;
   y2: number;
   isActive: boolean;
+  index: number;
 }
 
-const CableConector = ({ x1, y1, x2, y2, isActive }: CableProps) => {
-  const animatedValue = useRef(new Animated.Value(0)).current;
+const Connection = React.memo(({ x1, y1, x2, y2, isActive, index }: ConnectionProps) => {
+  // Ajustar puntos para que las líneas terminen antes del nodo
+  const padding = 8;
+  const adjustedY1 = y1 + padding;
+  const adjustedY2 = y2 - padding;
 
-  useEffect(() => {
-    Animated.timing(animatedValue, {
-      toValue: isActive ? 1 : 0,
-      duration: isActive ? 1200 : 300,
-      easing: Easing.out(Easing.quad),
+  // Curva bezier suave
+  const midY = (adjustedY1 + adjustedY2) / 2;
+  const pathD = `M ${x1} ${adjustedY1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${adjustedY2}`;
+
+  const strokeColor = isActive ? SIMULADOR_COLORS.aprobada : '#D1D1D6';
+  const strokeWidth = isActive ? 2.5 : 1.5;
+  const opacity = isActive ? 1 : 0.6;
+
+  return (
+    <Path
+      d={pathD}
+      stroke={strokeColor}
+      strokeWidth={strokeWidth}
+      fill="none"
+      strokeLinecap="round"
+      opacity={opacity}
+    />
+  );
+});
+
+// Componente de nodo de materia
+interface MateriaNodeProps {
+  materia: MateriaSimulador;
+  left: number;
+  top: number;
+  onPress: () => void;
+  onLongPress: () => void;
+}
+
+const MateriaNode = React.memo(({ materia, left, top, onPress, onLongPress }: MateriaNodeProps) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const config = getEstadoConfig(materia.estado);
+
+  const handlePressIn = useCallback(() => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.95,
+      damping: 15,
+      stiffness: 300,
       useNativeDriver: true,
     }).start();
-  }, [isActive]);
+  }, [scaleAnim]);
 
-  const verticalGap = y2 - y1;
-  const controlY1 = y1 + verticalGap * 0.5;
-  const controlY2 = y2 - verticalGap * 0.5;
-  const d = `M${x1},${y1} C${x1},${controlY1} ${x2},${controlY2} ${x2},${y2}`;
+  const handlePressOut = useCallback(() => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      damping: 15,
+      stiffness: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [scaleAnim]);
 
-  const strokeDashoffset = animatedValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1500, 0],
+  const isCompleted = materia.estado === 'aprobada' || materia.estado === 'regularizada';
+  const isBlocked = materia.estado === 'bloqueada';
+
+  // Fondo sólido basado en estado
+  const solidBgColor = isBlocked
+    ? '#F5F5F5'
+    : isCompleted
+      ? (materia.estado === 'aprobada' ? '#E8F8EE' : '#FFF8E8')
+      : '#FFFFFF';
+
+  return (
+    <Animated.View
+      style={[
+        styles.nodeWrapper,
+        {
+          left,
+          top,
+          transform: [{ scale: scaleAnim }],
+        },
+      ]}
+    >
+      <Pressable
+        onPress={onPress}
+        onLongPress={onLongPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        delayLongPress={400}
+        style={({ pressed }) => [
+          styles.nodeContainer,
+          {
+            backgroundColor: solidBgColor,
+            borderColor: isCompleted ? config.color : SIMULADOR_COLORS.separator,
+            borderWidth: isCompleted ? 2.5 : 1,
+            opacity: isBlocked ? 0.7 : 1,
+          },
+          pressed && styles.nodePressed,
+        ]}
+      >
+        {/* Indicador de estado */}
+        <View style={[styles.statusIndicator, { backgroundColor: config.color }]}>
+          <Ionicons
+            name={config.iconFilled}
+            size={14}
+            color="#FFFFFF"
+          />
+        </View>
+
+        {/* Nombre de la materia */}
+        <Text
+          style={[
+            styles.nodeText,
+            { color: isBlocked ? SIMULADOR_COLORS.textTertiary : SIMULADOR_COLORS.textPrimary }
+          ]}
+          numberOfLines={3}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+        >
+          {materia.nombre}
+        </Text>
+
+        {/* Badge de nivel */}
+        <View style={[styles.levelBadge, isCompleted && { backgroundColor: config.color + '20' }]}>
+          <Text style={[styles.levelText, isCompleted && { color: config.color }]}>
+            Año {materia.nivel}
+          </Text>
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+});
+
+// Componente de estadísticas compactas
+interface StatsBarProps {
+  stats: SimuladorStats;
+}
+
+const StatsBar = React.memo(({ stats }: StatsBarProps) => {
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.spring(progressAnim, {
+      toValue: stats.porcentaje,
+      damping: 20,
+      stiffness: 90,
+      useNativeDriver: false,
+    }).start();
+  }, [stats.porcentaje, progressAnim]);
+
+  const progressWidth = progressAnim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
   });
 
   return (
-    <>
-      <Path d={d} stroke={SIMULADOR_COLORS.lineaInactiva} strokeWidth="2" fill="none" />
-      <AnimatedPath
-        d={d}
-        stroke={SIMULADOR_COLORS.aprobada}
-        strokeWidth="3"
-        strokeDasharray={1500}
-        strokeDashoffset={strokeDashoffset}
-        strokeLinecap="round"
-        fill="none"
-        opacity={isActive ? 1 : 0}
-      />
-      {isActive && <Circle cx={x2} cy={y2} r="3" fill={SIMULADOR_COLORS.aprobada} />}
-    </>
+    <View style={styles.statsContainer}>
+      {/* Barra de progreso */}
+      <View style={styles.progressBarContainer}>
+        <Animated.View
+          style={[
+            styles.progressBarFill,
+            { width: progressWidth }
+          ]}
+        />
+      </View>
+
+      {/* Stats */}
+      <View style={styles.statsRow}>
+        <View style={styles.statItem}>
+          <View style={[styles.statDot, { backgroundColor: SIMULADOR_COLORS.aprobada }]} />
+          <Text style={styles.statValue}>{stats.aprobadas}</Text>
+          <Text style={styles.statLabel}>Apr</Text>
+        </View>
+        <View style={styles.statItem}>
+          <View style={[styles.statDot, { backgroundColor: SIMULADOR_COLORS.regularizada }]} />
+          <Text style={styles.statValue}>{stats.regulares}</Text>
+          <Text style={styles.statLabel}>Reg</Text>
+        </View>
+        <View style={styles.statItem}>
+          <View style={[styles.statDot, { backgroundColor: SIMULADOR_COLORS.pendiente }]} />
+          <Text style={styles.statValue}>{stats.cursando}</Text>
+          <Text style={styles.statLabel}>Disp</Text>
+        </View>
+        <Text style={styles.percentageText}>{stats.porcentaje}%</Text>
+      </View>
+    </View>
   );
-};
+});
 
-export default function PlanMapaScreen() {
+export default function SimuladorScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
-  // Hook de datos
   const {
     materias,
     stats,
     loading,
     error,
-    isLoggedIn,
     refetch,
-    updateMateriaEstado,
   } = useSimuladorData();
 
-  // Estado local para el canvas
   const [localMaterias, setLocalMaterias] = useState<MateriaSimulador[]>([]);
-
-  // Estado local para estadísticas (se actualiza con las simulaciones)
   const [localStats, setLocalStats] = useState<SimuladorStats>(stats);
 
-  // Sheet de detalle
+  // Sheets
   const [selectedMateria, setSelectedMateria] = useState<MateriaSimulador | null>(null);
   const { visible: sheetVisible, sheetAnim, overlayOpacity, open: openSheet, close: closeSheet } = useSheetAnimation();
 
-  // Sheet de materia bloqueada
   const [blockedMateria, setBlockedMateria] = useState<MateriaSimulador | null>(null);
   const [blockedCorrelativas, setBlockedCorrelativas] = useState<CorrelativaFaltante[]>([]);
   const {
@@ -122,18 +258,17 @@ export default function PlanMapaScreen() {
     sheetAnim: blockedSheetAnim,
     overlayOpacity: blockedOverlayOpacity,
     open: openBlockedSheet,
-    close: closeBlockedSheet
+    close: closeBlockedSheet,
   } = useSheetAnimation();
 
-
-  // Sincronizar materias del hook con estado local
+  // Sincronizar materias
   useEffect(() => {
     if (materias.length > 0) {
       setLocalMaterias(materias);
     }
   }, [materias]);
 
-  // Recalcular estadísticas locales cuando localMaterias cambie
+  // Recalcular stats locales
   useEffect(() => {
     if (localMaterias.length > 0) {
       const aprobadas = localMaterias.filter(m => m.estado === 'aprobada').length;
@@ -142,12 +277,11 @@ export default function PlanMapaScreen() {
       const restantes = localMaterias.filter(m => m.estado === 'bloqueada').length;
       const total = localMaterias.length;
       const porcentaje = total > 0 ? Math.round((aprobadas / total) * 100) : 0;
-
       setLocalStats({ aprobadas, regulares, cursando, restantes, total, porcentaje });
     }
   }, [localMaterias]);
 
-  // Recalcular cascada localmente (misma lógica que el hook)
+  // Recalcular cascada
   const recalcularCascada = useCallback((lista: MateriaSimulador[]): MateriaSimulador[] => {
     if (!lista.length) return [];
     let nuevaLista = [...lista];
@@ -161,14 +295,12 @@ export default function PlanMapaScreen() {
           return materia;
         }
 
-        // Verificar requisitos de materias REGULARIZADAS (pueden estar regularizadas o aprobadas)
         const regularizadasCumplidas = materia.reqsRegularizadas.length === 0 ||
           materia.reqsRegularizadas.every(reqId => {
             const matRequisito = nuevaLista.find(m => m.id === reqId);
             return matRequisito && (matRequisito.estado === 'regularizada' || matRequisito.estado === 'aprobada');
           });
 
-        // Verificar requisitos de materias APROBADAS (deben estar aprobadas con final)
         const aprobadasCumplidas = materia.reqsAprobadas.length === 0 ||
           materia.reqsAprobadas.every(reqId => {
             const matRequisito = nuevaLista.find(m => m.id === reqId);
@@ -192,13 +324,11 @@ export default function PlanMapaScreen() {
     return nuevaLista;
   }, []);
 
-  // Handler para tap en nodo (ciclo de estados)
+  // Handlers
   const handlePressNode = useCallback((materia: MateriaSimulador) => {
-    // Si está bloqueada, mostrar el sheet con las correlativas faltantes
     if (materia.estado === 'bloqueada') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
 
-      // Obtener correlativas faltantes que necesitan estar REGULARIZADAS
       const faltantesRegularizadas: CorrelativaFaltante[] = materia.reqsRegularizadas
         .map(reqId => localMaterias.find(m => m.id === reqId))
         .filter((m): m is MateriaSimulador =>
@@ -206,7 +336,6 @@ export default function PlanMapaScreen() {
         )
         .map(m => ({ materia: m, tipoRequerido: 'regularizada' as const }));
 
-      // Obtener correlativas faltantes que necesitan estar APROBADAS
       const faltantesAprobadas: CorrelativaFaltante[] = materia.reqsAprobadas
         .map(reqId => localMaterias.find(m => m.id === reqId))
         .filter((m): m is MateriaSimulador =>
@@ -214,10 +343,8 @@ export default function PlanMapaScreen() {
         )
         .map(m => ({ materia: m, tipoRequerido: 'aprobada' as const }));
 
-      // Combinar ambas listas (evitando duplicados mostrando solo el requisito más estricto)
       const allFaltantes = [...faltantesRegularizadas];
       faltantesAprobadas.forEach(fa => {
-        // Si ya existe en regularizadas, no la agregamos (mostrar solo una vez)
         if (!allFaltantes.some(fr => fr.materia.id === fa.materia.id)) {
           allFaltantes.push(fa);
         }
@@ -230,218 +357,264 @@ export default function PlanMapaScreen() {
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
     const nuevoEstado = getNextEstado(materia.estado);
     const nuevasMaterias = localMaterias.map(m =>
       m.id === materia.id ? { ...m, estado: nuevoEstado } : m
     );
     setLocalMaterias(recalcularCascada(nuevasMaterias));
+  }, [localMaterias, recalcularCascada, openBlockedSheet]);
 
-    // NOTA: No sincronizamos con API - el simulador es solo temporal
-  }, [localMaterias, recalcularCascada, updateMateriaEstado, openBlockedSheet]);
-
-  // Handler para long press (abrir sheet)
   const handleLongPress = useCallback((materia: MateriaSimulador) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedMateria(materia);
     openSheet();
   }, [openSheet]);
 
-  // Handler para cambio de estado desde sheet
   const handleSheetChangeEstado = useCallback((nuevoEstado: EstadoVisual) => {
     if (!selectedMateria) return;
-
     const nuevasMaterias = localMaterias.map(m =>
       m.id === selectedMateria.id ? { ...m, estado: nuevoEstado } : m
     );
     setLocalMaterias(recalcularCascada(nuevasMaterias));
-    // NOTA: No sincronizamos con API - el simulador es solo temporal
-  }, [selectedMateria, localMaterias, recalcularCascada, updateMateriaEstado]);
+  }, [selectedMateria, localMaterias, recalcularCascada]);
 
+  // Calcular dimensiones del canvas
+  const { totalLevels, maxItemsPerLevel, canvasWidth, canvasHeight } = useMemo(() => {
+    if (localMaterias.length === 0) {
+      return { totalLevels: 5, maxItemsPerLevel: 8, canvasWidth: SCREEN_WIDTH, canvasHeight: 800 };
+    }
 
-  // Render conexiones
-  const renderConnections = () => {
+    const niveles = new Set(localMaterias.map(m => m.nivel));
+    const totalLevels = Math.max(...Array.from(niveles), 1);
+
+    const porNivel: Record<number, number> = {};
+    localMaterias.forEach(m => {
+      porNivel[m.nivel] = (porNivel[m.nivel] || 0) + 1;
+    });
+    const maxItemsPerLevel = Math.max(...Object.values(porNivel), 1);
+
+    const canvasWidth = Math.max(
+      PADDING_X * 2 + maxItemsPerLevel * (NODE_SIZE + NODE_SPACING_X),
+      SCREEN_WIDTH
+    );
+    const canvasHeight = PADDING_Y * 2 + totalLevels * (NODE_SIZE + NODE_SPACING_Y);
+
+    return { totalLevels, maxItemsPerLevel, canvasWidth, canvasHeight };
+  }, [localMaterias]);
+
+  // Calcular posiciones de nodos
+  const nodePositions = useMemo(() => {
+    const positions = new Map<number, { left: number; top: number }>();
+    const porNivel: Record<number, MateriaSimulador[]> = {};
+
+    localMaterias.forEach(m => {
+      if (!porNivel[m.nivel]) porNivel[m.nivel] = [];
+      porNivel[m.nivel].push(m);
+    });
+
+    Object.entries(porNivel).forEach(([nivel, materias]) => {
+      const nivelNum = parseInt(nivel);
+      const totalWidth = materias.length * (NODE_SIZE + NODE_SPACING_X) - NODE_SPACING_X;
+      const startX = (canvasWidth - totalWidth) / 2;
+
+      materias.forEach((mat, idx) => {
+        positions.set(mat.id, {
+          left: startX + idx * (NODE_SIZE + NODE_SPACING_X),
+          top: PADDING_Y + (nivelNum - 1) * (NODE_SIZE + NODE_SPACING_Y),
+        });
+      });
+    });
+
+    return positions;
+  }, [localMaterias, canvasWidth]);
+
+  // Renderizar conexiones
+  const renderConnections = useMemo(() => {
     if (!localMaterias.length) return null;
-    const cables: React.ReactNode[] = [];
+
+    let connectionIndex = 0;
+    const connections: React.ReactNode[] = [];
 
     localMaterias.forEach(materia => {
       materia.reqs.forEach(reqId => {
         const requisito = localMaterias.find(m => m.id === reqId);
         if (!requisito) return;
 
-        const x1 = OFFSET_X + (requisito.col * (COL_WIDTH + MARGIN_X)) + (COL_WIDTH / 2);
-        const y1 = OFFSET_Y + ((requisito.nivel - 1) * ROW_HEIGHT) + COL_WIDTH;
-        const x2 = OFFSET_X + (materia.col * (COL_WIDTH + MARGIN_X)) + (COL_WIDTH / 2);
-        const y2 = OFFSET_Y + ((materia.nivel - 1) * ROW_HEIGHT);
+        const fromPos = nodePositions.get(requisito.id);
+        const toPos = nodePositions.get(materia.id);
+        if (!fromPos || !toPos) return;
+
+        const x1 = fromPos.left + NODE_SIZE / 2;
+        const y1 = fromPos.top + NODE_SIZE;
+        const x2 = toPos.left + NODE_SIZE / 2;
+        const y2 = toPos.top;
 
         const isActive = requisito.estado === 'aprobada' || requisito.estado === 'regularizada';
 
-        cables.push(
-          <CableConector
+        connections.push(
+          <Connection
             key={`${reqId}-${materia.id}`}
-            x1={x1} y1={y1} x2={x2} y2={y2}
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
             isActive={isActive}
+            index={connectionIndex++}
           />
         );
       });
     });
-    return cables;
-  };
 
-  // Render nodos
-  const renderNodes = () => {
-    if (!localMaterias.length) return null;
+    return connections;
+  }, [localMaterias, nodePositions]);
 
-    return localMaterias.map((materia) => {
-      const left = OFFSET_X + (materia.col * (COL_WIDTH + MARGIN_X));
-      const top = OFFSET_Y + ((materia.nivel - 1) * ROW_HEIGHT);
-
-      const config = getEstadoConfig(materia.estado);
-      const borderColor = config.color;
-      const bgColor = config.bgColor;
-      const icon = config.icon;
-      const iconColor = config.iconColor;
-      const shadowColor = materia.estado === 'aprobada' || materia.estado === 'regularizada'
-        ? config.color : 'transparent';
-
-      return (
-        <TouchableOpacity
-          key={materia.id}
-          style={[
-            styles.nodeContainer,
-            {
-              left,
-              top,
-              borderColor,
-              backgroundColor: bgColor,
-              shadowColor,
-              elevation: shadowColor !== 'transparent' ? 10 : 0,
-            }
-          ]}
-          onPress={() => handlePressNode(materia)}
-          onLongPress={() => handleLongPress(materia)}
-          delayLongPress={400}
-          activeOpacity={0.8}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityLabel={`${materia.nombre}, ${config.label}`}
-          accessibilityHint={materia.estado === 'bloqueada'
-            ? 'Materia bloqueada, completa las correlativas primero'
-            : 'Toca para cambiar estado, manten presionado para ver detalles'}
-          accessibilityRole="button"
-        >
-          <View style={{ marginBottom: 6 }}>
-            <Ionicons name={icon} size={26} color={iconColor} />
-          </View>
-          <Text
-            style={[styles.nodeText, { color: materia.estado === 'bloqueada' ? '#555' : borderColor }]}
-            numberOfLines={3}
-          >
-            {materia.nombre}
-          </Text>
-          <View style={[styles.levelBadge, { borderColor: materia.estado === 'bloqueada' ? '#333' : borderColor }]}>
-            <Text style={[styles.levelText, { color: materia.estado === 'bloqueada' ? '#444' : borderColor }]}>
-              {materia.nivel}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      );
-    });
-  };
-
-  // Loading state
+  // Loading
   if (loading) {
     return (
       <View style={[styles.container, styles.centerContent]}>
-        <StatusBar barStyle="light-content" backgroundColor={SIMULADOR_COLORS.fondo} />
-        <ActivityIndicator size="large" color={SIMULADOR_COLORS.aprobada} />
+        <StatusBar barStyle="dark-content" backgroundColor={SIMULADOR_COLORS.background} />
+        <ActivityIndicator size="large" color={SIMULADOR_COLORS.pendiente} />
         <Text style={styles.loadingText}>Cargando plan de estudios...</Text>
       </View>
     );
   }
 
-  // Error state
+  // Error
   if (error) {
     return (
       <View style={[styles.container, styles.centerContent]}>
-        <StatusBar barStyle="light-content" backgroundColor={SIMULADOR_COLORS.fondo} />
-        <Ionicons name="alert-circle" size={48} color="#ff4444" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={refetch}>
-          <Text style={styles.retryButtonText}>Reintentar</Text>
-        </TouchableOpacity>
+        <StatusBar barStyle="dark-content" backgroundColor={SIMULADOR_COLORS.background} />
+        <View style={styles.errorContainer}>
+          <View style={styles.errorIcon}>
+            <Ionicons name="alert-circle" size={48} color={SIMULADOR_COLORS.regularizada} />
+          </View>
+          <Text style={styles.errorTitle}>No se pudo cargar</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <Pressable style={styles.retryButton} onPress={refetch}>
+            <Text style={styles.retryButtonText}>Reintentar</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
 
-  const canvasWidth = OFFSET_X + ((COL_WIDTH + MARGIN_X) * ITEMS_PER_LEVEL) + OFFSET_X;
-  const canvasHeight = OFFSET_Y + (ROW_HEIGHT * TOTAL_LEVELS);
-
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={SIMULADOR_COLORS.fondo} />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
-      {/* Header */}
-      <View style={styles.hudHeader}>
-        <TouchableOpacity
-          onPress={() => {
-            refetch(); // Resetear a datos reales al salir
-            router.back();
-          }}
-          style={styles.backBtn}
-          accessibilityLabel="Volver"
-          accessibilityRole="button"
-        >
-          <Ionicons name="arrow-back" size={24} color={SIMULADOR_COLORS.aprobada} />
-        </TouchableOpacity>
+      {/* Header con Blur */}
+      <BlurView intensity={80} tint="light" style={[styles.header, { paddingTop: insets.top }]}>
+        <View style={styles.headerContent}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.headerButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="chevron-back" size={28} color={SIMULADOR_COLORS.pendiente} />
+          </Pressable>
 
-        <View style={styles.headerCenter}>
-          <ProgressStats stats={localStats} compact />
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>Simulador</Text>
+            <Text style={styles.headerSubtitle}>{localStats.total} materias</Text>
+          </View>
+
+          <Pressable
+            onPress={refetch}
+            style={styles.headerButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="refresh" size={24} color={SIMULADOR_COLORS.pendiente} />
+          </Pressable>
         </View>
 
-        <TouchableOpacity
-          onPress={refetch}
-          style={styles.refreshBtn}
-          accessibilityLabel="Actualizar"
-          accessibilityRole="button"
+        <StatsBar stats={localStats} />
+
+        {/* Banner de simulación */}
+        <View style={styles.simulationBanner}>
+          <Ionicons name="flask-outline" size={14} color={SIMULADOR_COLORS.regularizada} />
+          <Text style={styles.simulationText}>Modo simulación · Los cambios no se guardan</Text>
+        </View>
+      </BlurView>
+
+      {/* Canvas con árbol de correlativas */}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: 180 + insets.top }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ minWidth: canvasWidth }}
         >
-          <Ionicons name="refresh" size={24} color={SIMULADOR_COLORS.aprobada} />
-        </TouchableOpacity>
-      </View>
+          <View style={[styles.canvas, { width: canvasWidth, height: canvasHeight }]}>
+            {/* Etiquetas de nivel */}
+            {Array.from({ length: totalLevels }, (_, i) => (
+              <View
+                key={`level-${i + 1}`}
+                style={[
+                  styles.levelLabel,
+                  { top: PADDING_Y + i * (NODE_SIZE + NODE_SPACING_Y) + NODE_SIZE / 2 - 12 }
+                ]}
+              >
+                <Text style={styles.levelLabelText}>{i + 1}°</Text>
+              </View>
+            ))}
 
-      {/* Banner de Modo Simulación - siempre visible */}
-      <View style={styles.guestBanner}>
-        <Ionicons name="flask" size={16} color="#FFD700" />
-        <Text style={styles.guestBannerText}>
-          🧪 Modo Simulación - Los cambios NO se guardarán
-        </Text>
-      </View>
-
-      {/* Canvas */}
-      <ScrollView style={styles.verticalScroll} contentContainerStyle={{ paddingBottom: 100 }}>
-        <ScrollView horizontal style={styles.horizontalScroll}>
-          <View
-            style={[
-              styles.canvas,
-              {
-                width: canvasWidth,
-                height: canvasHeight,
-              }
-            ]}
-          >
+            {/* Conexiones SVG */}
             <Svg
-              height={canvasHeight}
               width={canvasWidth}
-              style={styles.svgLayer}
+              height={canvasHeight}
+              style={styles.svgConnections}
             >
-              {renderConnections()}
+              {renderConnections}
             </Svg>
-            {renderNodes()}
+
+            {/* Nodos */}
+            {localMaterias.map(materia => {
+              const pos = nodePositions.get(materia.id);
+              if (!pos) return null;
+
+              return (
+                <MateriaNode
+                  key={materia.id}
+                  materia={materia}
+                  left={pos.left}
+                  top={pos.top}
+                  onPress={() => handlePressNode(materia)}
+                  onLongPress={() => handleLongPress(materia)}
+                />
+              );
+            })}
           </View>
         </ScrollView>
       </ScrollView>
 
+      {/* Leyenda flotante */}
+      <View style={[styles.legend, { bottom: insets.bottom + 16 }]}>
+        <BlurView intensity={90} tint="light" style={styles.legendBlur}>
+          <View style={styles.legendContent}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: SIMULADOR_COLORS.aprobada }]} />
+              <Text style={styles.legendText}>Aprobada</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: SIMULADOR_COLORS.regularizada }]} />
+              <Text style={styles.legendText}>Regular</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: SIMULADOR_COLORS.pendiente }]} />
+              <Text style={styles.legendText}>Disponible</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: SIMULADOR_COLORS.bloqueada }]} />
+              <Text style={styles.legendText}>Bloqueada</Text>
+            </View>
+          </View>
+        </BlurView>
+      </View>
 
-      {/* Sheet de detalle */}
+      {/* Sheets */}
       <MateriaDetailSheet
         materia={selectedMateria}
         allMaterias={localMaterias}
@@ -452,7 +625,6 @@ export default function PlanMapaScreen() {
         onChangeEstado={handleSheetChangeEstado}
       />
 
-      {/* Sheet de materia bloqueada */}
       <BlockedMateriaSheet
         materia={blockedMateria}
         correlativasFaltantes={blockedCorrelativas}
@@ -468,125 +640,284 @@ export default function PlanMapaScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: SIMULADOR_COLORS.fondo,
+    backgroundColor: SIMULADOR_COLORS.background,
   },
   centerContent: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  hudHeader: {
+
+  // Header
+  header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SIMULADOR_COLORS.separator,
+  },
+  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 50,
-    paddingBottom: 15,
     paddingHorizontal: 16,
-    backgroundColor: 'rgba(5, 10, 16, 0.95)',
-    borderBottomWidth: 1,
-    borderBottomColor: '#222',
-    zIndex: 10,
+    paddingVertical: 12,
   },
-  backBtn: {
-    padding: 8,
+  headerButton: {
+    width: 40,
+    height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 122, 255, 0.08)',
   },
-  refreshBtn: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  headerTitleContainer: {
+    alignItems: 'center',
   },
-  headerCenter: {
-    flex: 1,
-    marginHorizontal: 12,
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: SIMULADOR_COLORS.textPrimary,
+    letterSpacing: -0.4,
   },
-  guestBanner: {
+  headerSubtitle: {
+    fontSize: 12,
+    color: SIMULADOR_COLORS.textTertiary,
+    marginTop: 2,
+  },
+
+  // Stats
+  statsContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  progressBarContainer: {
+    height: 4,
+    backgroundColor: SIMULADOR_COLORS.backgroundTertiary,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: SIMULADOR_COLORS.aprobada,
+    borderRadius: 2,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  statDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  statValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: SIMULADOR_COLORS.textPrimary,
+    marginRight: 4,
+  },
+  statLabel: {
+    fontSize: 13,
+    color: SIMULADOR_COLORS.textTertiary,
+  },
+  percentageText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: SIMULADOR_COLORS.aprobada,
+    marginLeft: 'auto',
+  },
+
+  // Simulation Banner
+  simulationBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    backgroundColor: 'rgba(255, 149, 0, 0.08)',
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    gap: 8,
+    gap: 6,
   },
-  guestBannerText: {
-    color: '#FFD700',
+  simulationText: {
     fontSize: 12,
-    fontFamily: 'monospace',
+    color: SIMULADOR_COLORS.regularizada,
+    fontWeight: '500',
   },
-  verticalScroll: {
+
+  // Canvas
+  scrollView: {
     flex: 1,
   },
-  horizontalScroll: {
-    flex: 1,
+  scrollContent: {
+    paddingBottom: 100,
   },
   canvas: {
     position: 'relative',
   },
-  svgLayer: {
+  svgConnections: {
     position: 'absolute',
     top: 0,
     left: 0,
     zIndex: 0,
   },
-  nodeContainer: {
+
+  // Level Labels
+  levelLabel: {
     position: 'absolute',
-    width: COL_WIDTH,
-    height: COL_WIDTH,
+    left: 4,
+    width: 24,
+    height: 24,
     borderRadius: 12,
-    borderWidth: 2,
+    backgroundColor: SIMULADOR_COLORS.backgroundSecondary,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  levelLabelText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: SIMULADOR_COLORS.textTertiary,
+  },
+
+  // Nodes
+  nodeWrapper: {
+    position: 'absolute',
+    width: NODE_SIZE,
+    height: NODE_SIZE,
     zIndex: 1,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
+  },
+  nodeContainer: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  nodePressed: {
+    shadowOpacity: 0.02,
+  },
+  statusIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   nodeText: {
-    fontSize: 10,
-    fontWeight: 'bold',
+    fontSize: 11,
+    fontWeight: '600',
     textAlign: 'center',
-    fontFamily: 'monospace',
+    lineHeight: 14,
+    paddingHorizontal: 4,
   },
   levelBadge: {
     position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: SIMULADOR_COLORS.fondo,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    bottom: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: SIMULADOR_COLORS.backgroundTertiary,
   },
   levelText: {
-    fontSize: 10,
-    fontWeight: 'bold',
+    fontSize: 9,
+    fontWeight: '600',
+    color: SIMULADOR_COLORS.textTertiary,
   },
+
+  // Legend
+  legend: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    zIndex: 50,
+  },
+  legendBlur: {
+    borderRadius: 16,
+  },
+  legendContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 6,
+  },
+  legendText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: SIMULADOR_COLORS.textSecondary,
+  },
+
+  // Loading & Error
   loadingText: {
-    color: '#888',
-    fontSize: 14,
     marginTop: 16,
-    fontFamily: 'monospace',
+    fontSize: 15,
+    color: SIMULADOR_COLORS.textTertiary,
   },
-  errorText: {
-    color: '#ff4444',
-    fontSize: 14,
-    marginTop: 16,
-    textAlign: 'center',
+  errorContainer: {
+    alignItems: 'center',
     paddingHorizontal: 32,
   },
+  errorIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255, 149, 0, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: SIMULADOR_COLORS.textPrimary,
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 15,
+    color: SIMULADOR_COLORS.textTertiary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
   retryButton: {
-    marginTop: 16,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    backgroundColor: SIMULADOR_COLORS.aprobada,
-    borderRadius: 8,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    backgroundColor: SIMULADOR_COLORS.pendiente,
+    borderRadius: 14,
   },
   retryButtonText: {
-    color: '#000',
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

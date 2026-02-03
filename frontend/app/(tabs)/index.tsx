@@ -18,6 +18,7 @@ import {
   Animated,
   Modal,
   ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -161,11 +162,14 @@ export default function HomeScreen() {
 
   // Quick Tasks state
   const [newTask, setNewTask] = useState('');
+  const [newTaskDescription, setNewTaskDescription] = useState('');
   const [addingTask, setAddingTask] = useState(false);
 
   // Animations
   const notification = useNotificationAnimation();
   const scrollY = useRef(new Animated.Value(0)).current;
+  const scrollViewRef = useRef<Animated.ScrollView>(null);
+  const taskInputRef = useRef<TextInput>(null);
 
   const headerOpacity = scrollY.interpolate({
     inputRange: [40, 70],
@@ -262,13 +266,14 @@ export default function HomeScreen() {
     if (!newTask.trim() || addingTask) return;
 
     const taskText = newTask.trim();
+    const taskDescription = newTaskDescription.trim() || undefined;
     const tempId = Date.now(); // ID temporal para optimistic update
 
     // Optimistic update - agregar inmediatamente a la UI
     const optimisticTask = {
       id: tempId,
       nombre: taskText,
-      descripcion: 'Tarea Rápida',
+      descripcion: taskDescription,
       fecha: new Date().toISOString().split('T')[0],
       hora: `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}`,
       tipo: 'quick_task',
@@ -276,14 +281,15 @@ export default function HomeScreen() {
 
     setTasks((prev) => [...prev, optimisticTask as any]);
     setNewTask('');
+    setNewTaskDescription('');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     // Guardar en background
     try {
       setAddingTask(true);
-      const created = await DataRepository.createRecordatorio({
+      const created = await DataRepository.createRecordatorio(false, {
         nombre: taskText,
-        descripcion: 'Tarea Rápida',
+        descripcion: taskDescription,
         fecha: optimisticTask.fecha,
         hora: optimisticTask.hora,
         tipo: 'quick_task',
@@ -299,7 +305,7 @@ export default function HomeScreen() {
     } finally {
       setAddingTask(false);
     }
-  }, [newTask, setTasks, addingTask]);
+  }, [newTask, newTaskDescription, setTasks, addingTask]);
 
   const handleCompleteTask = useCallback(
     async (id: number) => {
@@ -351,19 +357,30 @@ export default function HomeScreen() {
     }
   }, [tempShortcuts]);
 
-  const handleSelectCarrera = useCallback(async (carrera: string) => {
+  const handleSelectCarrera = useCallback(async (carreraId: string, carreraNombre: string) => {
     try {
+      const userId = user?.id;
+      if (!userId) {
+        Alert.alert('Error', 'No se encontró sesión activa');
+        return;
+      }
+
+      // 1. Update in our DB (critical for filtering materias)
+      await DataRepository.updateCareer(userId, carreraId);
+
+      // 2. Update in Supabase Metadata (for UI display)
       const { error } = await supabase.auth.updateUser({
-        data: { carrera }
+        data: { carrera: carreraNombre, carreraId: carreraId }
       });
       if (error) throw error;
+
       setShowCarreraModal(false);
       loadData(); // Re-fetch to update progress card
     } catch (error) {
       console.error('Error selecting carrera:', error);
       Alert.alert('Error', 'No se pudo guardar la carrera');
     }
-  }, [loadData]);
+  }, [user, loadData]);
 
   // Get active shortcuts data
   const activeShortcuts = selectedShortcuts
@@ -371,7 +388,11 @@ export default function HomeScreen() {
     .filter(Boolean) as typeof AVAILABLE_SHORTCUTS[number][];
 
   return (
-    <View style={[styles.container, { backgroundColor }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+    >
       <StatusBar
         barStyle={isDarkMode ? 'light-content' : 'dark-content'}
         backgroundColor="transparent"
@@ -403,9 +424,13 @@ export default function HomeScreen() {
       </Animated.View>
 
       <Animated.ScrollView
+        ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }
@@ -573,16 +598,41 @@ export default function HomeScreen() {
               <View style={[styles.tasksContainer, { backgroundColor: cardColor, borderWidth: isDarkMode ? 0 : 1, borderColor: '#E2E8F0' }]}>
                 {/* Task Input */}
                 <View style={[styles.taskInputRow, { backgroundColor: isDarkMode ? 'transparent' : '#F8FAFC' }]}>
-                  <TextInput
-                    placeholder="Nueva tarea..."
-                    placeholderTextColor={theme.icon}
-                    style={[styles.taskInput, { color: theme.text }]}
-                    value={newTask}
-                    onChangeText={setNewTask}
-                    onSubmitEditing={handleAddTask}
-                    returnKeyType="done"
-                    blurOnSubmit={false}
-                  />
+                  <View style={styles.taskInputFields}>
+                    <TextInput
+                      ref={taskInputRef}
+                      placeholder="Nueva tarea..."
+                      placeholderTextColor={theme.icon}
+                      style={[styles.taskInput, { color: theme.text }]}
+                      value={newTask}
+                      onChangeText={setNewTask}
+                      onFocus={() => {
+                        // Scroll suave para que el input sea visible
+                        setTimeout(() => {
+                          (scrollViewRef.current as any)?.scrollTo?.({ y: 400, animated: true });
+                        }, 150);
+                      }}
+                      onSubmitEditing={() => {
+                        if (newTask.trim() && !newTaskDescription) {
+                          handleAddTask();
+                        }
+                      }}
+                      returnKeyType={newTaskDescription ? 'next' : 'done'}
+                      blurOnSubmit={false}
+                    />
+                    {newTask.trim().length > 0 && (
+                      <TextInput
+                        placeholder="Descripción (opcional)"
+                        placeholderTextColor={theme.separator}
+                        style={[styles.taskDescriptionInput, { color: theme.icon }]}
+                        value={newTaskDescription}
+                        onChangeText={setNewTaskDescription}
+                        onSubmitEditing={handleAddTask}
+                        returnKeyType="done"
+                        blurOnSubmit={false}
+                      />
+                    )}
+                  </View>
                   <Pressable
                     onPress={handleAddTask}
                     disabled={addingTask || !newTask.trim()}
@@ -739,7 +789,7 @@ export default function HomeScreen() {
           </SafeAreaView>
         </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -974,16 +1024,24 @@ const styles = StyleSheet.create({
   },
   taskInputRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: 12,
     paddingHorizontal: 16,
     gap: 12,
   },
-  taskInput: {
+  taskInputFields: {
     flex: 1,
+  },
+  taskInput: {
     fontSize: 17,
     paddingVertical: 8,
     paddingHorizontal: 0,
+  },
+  taskDescriptionInput: {
+    fontSize: 14,
+    paddingVertical: 4,
+    paddingHorizontal: 0,
+    marginTop: 2,
   },
   addTaskButton: {
     width: 32,

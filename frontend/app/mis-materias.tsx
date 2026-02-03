@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import * as React from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,6 +25,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { LinearGradient } from 'expo-linear-gradient';
 
 // Habilitar LayoutAnimation en Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -31,9 +33,11 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 export type EstadoMateriaKey = 'no_cursado' | 'cursado' | 'regular' | 'aprobado';
-import { materiasApi as api } from '../src/services/api';
+import { DataRepository as DataRepo } from '../src/services/dataRepository';
 import { Colors } from '../src/constants/theme';
 import { useAuth } from '../src/context/AuthContext';
+import { BlurView } from 'expo-blur';
+const BlurViewTyped = BlurView as any;
 
 const { width, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -101,7 +105,8 @@ function MisMateriasScreen() {
   const theme = Colors[colorScheme];
   const ESTADOS_MATERIA = getEstadosMateria(theme);
 
-  const { user, isGuest } = useAuth();
+  const { user } = useAuth();
+  const isGuest = !user;
   const [usuarioId, setUsuarioId] = useState<string>('');
   const [misMaterias, setMisMaterias] = useState<UsuarioMateria[]>([]);
   const [materiasDisponibles, setMateriasDisponibles] = useState<Materia[]>([]);
@@ -270,7 +275,7 @@ function MisMateriasScreen() {
 
   const cargarMisMaterias = async (userId: string) => {
     try {
-      const data = await api.getMateriasByUsuario(userId);
+      const data = await DataRepo.getMisMaterias(userId);
       const sortedData = data.sort((a: any, b: any) => {
         if (a.estado === 'cursado' && b.estado !== 'cursado') return -1;
         if (a.estado !== 'cursado' && b.estado === 'cursado') return 1;
@@ -285,7 +290,7 @@ function MisMateriasScreen() {
 
   const cargarMateriasDisponibles = async (userId: string) => {
     try {
-      const data = await api.getMateriasDisponibles(userId);
+      const data = await DataRepo.getMateriasDisponibles(userId);
       setMateriasDisponibles(data);
     } catch (error: any) {
       console.error('Error cargando materias disponibles:', error);
@@ -366,10 +371,10 @@ function MisMateriasScreen() {
       } : { dia: null, hora: null, duracion: null, aula: null };
 
       if (modoEdicion && materiaEditando) {
-        await api.updateEstadoMateria(usuarioId, materiaEditando.materiaId, estadoSeleccionado, schedule);
+        await DataRepo.updateEstadoMateria(usuarioId, materiaEditando.materiaId, estadoSeleccionado, schedule);
         triggerHaptic('success');
       } else {
-        await api.addMateriaToUsuario(usuarioId, materiaSeleccionada.id, estadoSeleccionado as any, schedule);
+        await DataRepo.addMateriaToUsuario(usuarioId, materiaSeleccionada.id, estadoSeleccionado as any, schedule);
         triggerHaptic('success');
       }
 
@@ -390,7 +395,7 @@ function MisMateriasScreen() {
   const eliminarMateria = async (materiaId: number, nombreMateria: string) => {
     try {
       setLoadingAction(true);
-      await api.removeMateriaFromUsuario(usuarioId, materiaId);
+      await DataRepo.removeMateriaFromUsuario(usuarioId, materiaId);
       triggerHaptic('success');
       await cargarDatos(false);
     } catch (error: any) {
@@ -449,7 +454,12 @@ function MisMateriasScreen() {
         accessibilityHint="Toca para editar esta materia"
         accessibilityRole="button"
       >
-        <View style={[styles.cardLeftStrip, { backgroundColor: estadoInfo.color }]} />
+        <LinearGradient
+          colors={[estadoInfo.color, estadoInfo.color + '80']}
+          style={styles.cardLeftStrip}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+        />
 
         <View style={styles.cardMainContent}>
           <View style={styles.cardHeaderRow}>
@@ -545,9 +555,9 @@ function MisMateriasScreen() {
         {
           borderBottomColor: theme.separator,
           opacity: headerOpacity,
-          backgroundColor: theme.background + 'EE'
         }
       ]}>
+        <BlurViewTyped intensity={100} tint={colorScheme} style={StyleSheet.absoluteFill} />
         <View style={styles.headerInlineContent}>
           <TouchableOpacity
             onPress={() => { triggerHaptic(); router.back(); }}
@@ -600,11 +610,11 @@ function MisMateriasScreen() {
                   setModalVisible(true);
                   animarAbrirModal(modalSheetAnim, modalBackdropAnim);
                 }}
-                style={styles.circularBtn}
+                style={[styles.circularBtn, { backgroundColor: theme.blue + '15' }]}
                 accessibilityLabel="Agregar materia"
                 accessibilityRole="button"
               >
-                <Ionicons name="add" size={30} color={theme.blue} />
+                <Ionicons name="add" size={32} color={theme.blue} />
               </TouchableOpacity>
             </Animated.View>
             <Animated.Text style={[styles.headerLargeTitle, { color: theme.text, opacity: headerLargeOpacity }]}>
@@ -732,11 +742,12 @@ function MisMateriasScreen() {
                   style={[
                     styles.modalContent,
                     {
-                      backgroundColor: theme.backgroundSecondary,
+                      backgroundColor: theme.backgroundSecondary + 'CC',
                       transform: [{ translateY: modalSheetAnim }]
                     }
                   ]}
                 >
+                  <BlurViewTyped intensity={80} tint={colorScheme} style={StyleSheet.absoluteFill} />
                   <View style={[styles.modalHandle, { backgroundColor: theme.separator }]} />
                   <View style={styles.estadoModalHeader}>
                     <TouchableOpacity onPress={cerrarModalSeleccion}>
@@ -787,11 +798,12 @@ function MisMateriasScreen() {
                     style={[
                       styles.estadoModalContent,
                       {
-                        backgroundColor: theme.backgroundSecondary,
+                        backgroundColor: theme.backgroundSecondary + 'CC',
                         transform: [{ translateY: estadoSheetAnim }]
                       }
                     ]}
                   >
+                    <BlurViewTyped intensity={80} tint={colorScheme} style={StyleSheet.absoluteFill} />
                     <View style={[styles.modalHandle, { backgroundColor: theme.icon + '40' }]} />
                     <View style={styles.estadoModalHeader}>
                       <TouchableOpacity onPress={cerrarModalEstado}>
@@ -964,15 +976,15 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
 
   materiaCard: {
-    borderRadius: 16, flexDirection: 'row', marginBottom: 12,
-    overflow: 'hidden', elevation: 2, shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5
+    borderRadius: 20, flexDirection: 'row', marginBottom: 16,
+    overflow: 'hidden', elevation: 4, shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8
   },
   cardLeftStrip: { width: 6, height: '100%' },
   cardMainContent: { flex: 1, padding: 16 },
   cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  tagContainer: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  tagText: { fontSize: 10, fontWeight: '800' },
+  tagContainer: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  tagText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   materiaNombre: { fontSize: 17, fontWeight: '700', marginBottom: 6 },
   cardFooter: { flexDirection: 'row' },
   metaItem: { flexDirection: 'row', alignItems: 'center', marginRight: 15 },

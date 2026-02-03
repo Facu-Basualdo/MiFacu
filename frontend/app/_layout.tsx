@@ -1,6 +1,7 @@
+// Suprimir warnings ANTES de importar expo-notifications
+import '../src/utils/suppress-warnings';
 // Polyfills and global setup
 import '../src/utils/notifications';
-import 'react-native-url-polyfill/auto';
 
 import { Stack, useRouter, usePathname } from "expo-router";
 import { AuthProvider, useAuth } from "../src/context/AuthContext";

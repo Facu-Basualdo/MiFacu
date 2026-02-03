@@ -21,7 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../../src/constants/theme';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useAuth } from '../../src/context/AuthContext';
-import { materiasApi as api } from '../../src/services/api';
+import { DataRepository } from '../../src/services/dataRepository';
 import { supabase } from '../../src/config/supabase';
 import { CarreraModal } from '../../src/components/home';
 import { mifacuNavy, mifacuGold } from '../../src/constants/theme';
@@ -41,6 +41,7 @@ export default function PerfilScreen() {
 
   const [privacyMode, setPrivacyMode] = useState(false);
   const [showCarreraModal, setShowCarreraModal] = useState(false);
+  const [carrera, setCarrera] = useState('No seleccionada');
   const [stats, setStats] = useState<Stats>({ aprobadas: 0, regulares: 0, cursando: 0, totalPlan: 0 });
 
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -65,24 +66,28 @@ export default function PerfilScreen() {
 
   const loadData = async () => {
     try {
+      const userId = user?.id;
+      if (!userId) return;
+
       // Load privacy mode
       const savedPrivacy = await AsyncStorage.getItem('privacy_mode');
       if (savedPrivacy !== null) {
         setPrivacyMode(savedPrivacy === 'true');
       }
 
-      // Load stats
-      const userId = user?.id;
-      if (!userId) return;
+      // Load Profile & Career
+      const profile = await DataRepository.getUserProfile(userId);
+      setCarrera(profile.carrera?.nombre || 'No seleccionada');
 
-      const materias = await api.getMateriasByUsuario(userId);
+      // Load stats
+      const materias = await DataRepository.getMisMaterias(userId);
       const aprobadas = materias.filter((m: any) => m.estado === 'aprobado').length;
       const regulares = materias.filter((m: any) => m.estado === 'regular').length;
       const cursando = materias.filter((m: any) => m.estado === 'cursado').length;
 
-      // Get total from plan
-      const allMaterias = await api.getMaterias();
-      const totalPlan = allMaterias.length;
+      // Get total from plan filtered by career
+      const allMaterias = await DataRepository.getMateriasDisponibles(userId);
+      const totalPlan = materias.length + allMaterias.length;
 
       setStats({ aprobadas, regulares, cursando, totalPlan });
     } catch (error) {
@@ -114,19 +119,30 @@ export default function PerfilScreen() {
     ]);
   }, [signOut]);
 
-  const handleSelectCarrera = useCallback(async (carrera: string) => {
+  const handleSelectCarrera = useCallback(async (carreraId: string, carreraNombre: string) => {
     try {
-      const { error } = await supabase.auth.updateUser({
-        data: { carrera }
+      const userId = user?.id;
+      if (!userId) return;
+
+      // 1. Update in our DB
+      await DataRepository.updateCareer(userId, carreraId);
+
+      // 2. Update in Supabase Metadata (optional but good for consistency)
+      await supabase.auth.updateUser({
+        data: {
+          carrera: carreraNombre,
+          carreraId: carreraId
+        }
       });
-      if (error) throw error;
+
       setShowCarreraModal(false);
       loadData();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
       console.error('Error updating carrera:', error);
       Alert.alert('Error', 'No se pudo actualizar la carrera');
     }
-  }, [loadData]);
+  }, [user, loadData]);
 
   const progreso = stats.totalPlan > 0 ? Math.round((stats.aprobadas / stats.totalPlan) * 100) : 0;
 
@@ -295,7 +311,7 @@ export default function PerfilScreen() {
               <View style={styles.optionContent}>
                 <Text style={[styles.optionLabel, { color: theme.text }]}>Mi Carrera</Text>
                 <Text style={[styles.optionHint, { color: theme.icon }]}>
-                  {user?.user_metadata?.carrera || 'No seleccionada'}
+                  {carrera}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={theme.separator} />
