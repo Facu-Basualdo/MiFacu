@@ -1,7 +1,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -22,6 +22,7 @@ import {
   Switch
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import { DataRepository } from '../src/services/dataRepository';
@@ -240,7 +241,7 @@ const EventCardContent = ({ evento, onDeleteTrigger }: { evento: any, onDeleteTr
 
 export default function ParcialesScreen() {
   const router = useRouter();
-  const { isGuest } = useAuth();
+  const { user, isGuest } = useAuth();
   const colorScheme = useColorScheme() ?? 'light';
   const theme = Colors[colorScheme];
 
@@ -257,8 +258,10 @@ export default function ParcialesScreen() {
   const [selectedMateriaNombre, setSelectedMateriaNombre] = useState('');
   const [nuevoTitulo, setNuevoTitulo] = useState('');
   const [nuevoTipo, setNuevoTipo] = useState<'Parcial' | 'Entrega'>('Parcial');
-  const [nuevaFecha, setNuevaFecha] = useState('');
-  const [nuevaHora, setNuevaHora] = useState('');
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedTime, setSelectedTime] = useState<Date | null>(null);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [nuevoColor, setNuevoColor] = useState(PALETA_COLORES[0]);
 
   // Notificaciones
@@ -281,7 +284,7 @@ export default function ParcialesScreen() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const data = await DataRepository.getRecordatorios(isGuest);
+      const data = await DataRepository.getRecordatorios();
 
       // Filtrar solo Parciales y Entregas
       const filtrados = data.filter((item: any) =>
@@ -317,7 +320,8 @@ export default function ParcialesScreen() {
 
   const loadMaterias = async () => {
     try {
-      const data = await materiasApi.getMaterias();
+      const carreraId = (user?.user_metadata as any)?.carreraId;
+      const data = await DataRepository.getAllMaterias(carreraId);
       const sorted = data.sort((a: any, b: any) => (a.numero || 999) - (b.numero || 999));
       setMaterias(sorted.map((m: any) => ({ id: m.id, nombre: m.nombre })));
     } catch (e) {
@@ -325,10 +329,12 @@ export default function ParcialesScreen() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-    loadMaterias();
-  }, [isGuest]);
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+      loadMaterias();
+    }, [isGuest, (user?.user_metadata as any)?.carreraId])
+  );
 
   const openSheet = () => {
     setModalVisible(true);
@@ -372,41 +378,57 @@ export default function ParcialesScreen() {
     } catch (e) { Alert.alert("Error al borrar"); }
   };
 
-  const handleChangeFecha = (text: string) => {
-    let limpio = text.replace(/[^0-9]/g, '');
-    if (limpio.length > 2) limpio = limpio.slice(0, 2) + '/' + limpio.slice(2, 4);
-    setNuevaFecha(limpio);
+  const handleDateChange = (event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS === 'android') setShowDatePicker(false);
+    if (event.type === 'set' && date) {
+      setSelectedDate(date);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
   };
 
-  const handleChangeHora = (text: string) => {
-    let limpio = text.replace(/[^0-9]/g, '');
-    if (limpio.length > 2) limpio = limpio.slice(0, 2) + ':' + limpio.slice(2, 4);
-    setNuevaHora(limpio);
+  const handleTimeChange = (event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS === 'android') setShowTimePicker(false);
+    if (event.type === 'set' && date) {
+      setSelectedTime(date);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const formatDateDisplay = (date: Date) => {
+    const d = date.getDate().toString().padStart(2, '0');
+    const m = (date.getMonth() + 1).toString().padStart(2, '0');
+    return `${d}/${m}`;
+  };
+
+  const formatTimeDisplay = (date: Date) => {
+    const h = date.getHours().toString().padStart(2, '0');
+    const m = date.getMinutes().toString().padStart(2, '0');
+    return `${h}:${m}`;
   };
 
   const handleAgregar = async () => {
-    if (!nuevoTitulo || nuevaFecha.length < 5) {
+    if (!nuevoTitulo || !selectedDate) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return Alert.alert("Faltan datos", "Ingresá un título y una fecha válida (DD/MM)");
+      return Alert.alert("Faltan datos", "Ingresá un título y seleccioná una fecha.");
     }
 
     try {
-      const [d, m] = nuevaFecha.split('/');
-      const year = new Date().getFullYear();
-      const isoDate = `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+      const d = selectedDate.getDate().toString().padStart(2, '0');
+      const m = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
+      const isoDate = `${selectedDate.getFullYear()}-${m}-${d}`;
+      const horaStr = selectedTime ? formatTimeDisplay(selectedTime) : "09:00";
 
       const nuevoEvento: any = {
         nombre: nuevoTitulo,
         tipo: nuevoTipo,
         fecha: isoDate,
-        hora: nuevaHora || "09:00",
+        hora: horaStr,
         color: nuevoColor,
       };
 
       // Solo agregar materiaId si se seleccionó una materia
       if (selectedMateriaId) {
         nuevoEvento.materiaId = selectedMateriaId;
-        // Incluir nombre para guest mode (almacenamiento local)
         nuevoEvento.materiaNombre = selectedMateriaNombre;
       }
 
@@ -418,42 +440,40 @@ export default function ParcialesScreen() {
       // Programar notificación local if enabled
       if (notificar && newId) {
         try {
-          const fechaExamen = parseDate(nuevaFecha);
-          const [h, min] = (nuevaHora || "09:00").split(':').map(Number);
-          fechaExamen.setHours(h, min, 0, 0);
+          const fechaEvento = new Date(selectedDate);
+          const [h, min] = horaStr.split(':').map(Number);
+          fechaEvento.setHours(h, min, 0, 0);
 
-          const scheduledDate = new Date(fechaExamen.getTime() - anticipacion * 60000);
+          const scheduledDate = new Date(fechaEvento.getTime() - anticipacion * 60000);
           const ahora = new Date();
 
-          // Si la fecha programada ya pasó pero anticipación es 0 (Momento),
-          // enviar notificación inmediata (en 3 segundos para dar tiempo a que se guarde)
-          if (scheduledDate <= ahora && anticipacion === 0) {
-            const fechaInmediata = new Date(ahora.getTime() + 3000); // 3 segundos
+          const notifContent = {
+            title: `📅 ${nuevoTipo}: ${nuevoTitulo}`,
+            body: anticipacion === 0
+              ? `¡${nuevoTitulo} es ahora!`
+              : `Recordatorio: ${nuevoTitulo} es ${anticipacion >= 1440 ? 'mañana' : 'pronto'}. ¡Prepárate!`,
+            data: { id: newId },
+            sound: true as const,
+            ...(Platform.OS === 'android' && { channelId: 'examenes' }),
+          };
+
+          if (scheduledDate <= ahora) {
             await Notifications.scheduleNotificationAsync({
               identifier: newId.toString(),
-              content: {
-                title: `📅 ${nuevoTipo}: ${nuevoTitulo}`,
-                body: `¡Recordatorio inmediato para ${nuevoTitulo}!`,
-                data: { id: newId },
-                sound: true,
-              },
+              content: notifContent,
               trigger: {
-                type: Notifications.SchedulableTriggerInputTypes.DATE,
-                date: fechaInmediata
-              } as Notifications.NotificationTriggerInput,
+                type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+                seconds: 2,
+              },
             });
-          } else if (scheduledDate > ahora) {
+          } else {
             await Notifications.scheduleNotificationAsync({
               identifier: newId.toString(),
-              content: {
-                title: `📅 ${nuevoTipo}: ${nuevoTitulo}`,
-                body: `Recordatorio: ${nuevoTitulo} es ${anticipacion >= 1440 ? 'mañana' : 'pronto'}. ¡Prepárate!`,
-                data: { id: newId },
-                sound: true,
-              },
+              content: notifContent,
               trigger: {
                 type: Notifications.SchedulableTriggerInputTypes.DATE,
-                date: scheduledDate
+                date: scheduledDate,
+                ...(Platform.OS === 'android' && { channelId: 'examenes' }),
               } as Notifications.NotificationTriggerInput,
             });
           }
@@ -466,7 +486,8 @@ export default function ParcialesScreen() {
       loadData();
 
       // Reset inputs
-      setNuevoTitulo(''); setNuevaFecha(''); setNuevaHora('');
+      setNuevoTitulo(''); setSelectedDate(null); setShowDatePicker(false);
+      setSelectedTime(null); setShowTimePicker(false);
       setNuevoColor(PALETA_COLORES[0]); setNotificar(true);
       setSelectedMateriaId(null); setSelectedMateriaNombre('');
     } catch (error) {
@@ -521,67 +542,6 @@ export default function ParcialesScreen() {
           )}
         </ScrollView>
       </SafeAreaView>
-
-      {/* MODAL SELECTOR DE MATERIA */}
-      <Modal
-        visible={showMateriaPicker}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowMateriaPicker(false)}
-      >
-        <View style={styles.pickerModalContainer}>
-          <View style={[styles.pickerModalContent, { backgroundColor: theme.backgroundSecondary }]}>
-            <View style={styles.pickerModalHeader}>
-              <Text style={[styles.pickerModalTitle, { color: theme.text }]}>Seleccionar Materia</Text>
-              <TouchableOpacity onPress={() => setShowMateriaPicker(false)}>
-                <Ionicons name="close-circle" size={28} color={theme.icon} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.pickerList} showsVerticalScrollIndicator={false}>
-              {/* Opción para quitar selección */}
-              <TouchableOpacity
-                style={[
-                  styles.pickerItem,
-                  { borderBottomColor: theme.separator + '30' },
-                  !selectedMateriaId && { backgroundColor: theme.tint + '20' }
-                ]}
-                onPress={() => {
-                  setSelectedMateriaId(null);
-                  setSelectedMateriaNombre('');
-                  setShowMateriaPicker(false);
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }}
-              >
-                <Text style={[styles.pickerItemText, { color: theme.icon, fontStyle: 'italic' }]}>Sin materia asociada</Text>
-                {!selectedMateriaId && (
-                  <Ionicons name="checkmark-circle" size={22} color={theme.tint} />
-                )}
-              </TouchableOpacity>
-              {materias.map((m) => (
-                <TouchableOpacity
-                  key={m.id}
-                  style={[
-                    styles.pickerItem,
-                    { borderBottomColor: theme.separator + '30' },
-                    selectedMateriaId === m.id && { backgroundColor: theme.tint + '20' }
-                  ]}
-                  onPress={() => {
-                    setSelectedMateriaId(m.id);
-                    setSelectedMateriaNombre(m.nombre);
-                    setShowMateriaPicker(false);
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }}
-                >
-                  <Text style={[styles.pickerItemText, { color: theme.text }]}>{m.nombre}</Text>
-                  {selectedMateriaId === m.id && (
-                    <Ionicons name="checkmark-circle" size={22} color={theme.tint} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
 
       {/* CUSTOM ANIMATED SHEET */}
       <Modal
@@ -669,30 +629,83 @@ export default function ParcialesScreen() {
 
                   <View style={styles.rowInputs}>
                     <View style={{ flex: 1, marginRight: 15 }}>
-                      <Text style={[styles.label, { color: theme.icon }]}>FECHA (DD/MM)</Text>
-                      <TextInput
-                        style={[styles.input, { backgroundColor: theme.separator + '30', color: theme.text }]}
-                        placeholder="19/02"
-                        placeholderTextColor={theme.icon}
-                        value={nuevaFecha}
-                        onChangeText={handleChangeFecha}
-                        keyboardType="numeric"
-                        maxLength={5}
-                      />
+                      <Text style={[styles.label, { color: theme.icon }]}>FECHA</Text>
+                      <TouchableOpacity
+                        style={[styles.input, styles.pickerButton, { backgroundColor: theme.separator + '30' }]}
+                        onPress={() => { setShowDatePicker(!showDatePicker); setShowTimePicker(false); }}
+                      >
+                        <Text style={[styles.pickerButtonText, { color: selectedDate ? theme.text : theme.icon }]}>
+                          {selectedDate ? formatDateDisplay(selectedDate) : 'Elegir fecha'}
+                        </Text>
+                        <Ionicons name="calendar-outline" size={20} color={theme.icon} />
+                      </TouchableOpacity>
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.label, { color: theme.icon }]}>HORA</Text>
-                      <TextInput
-                        style={[styles.input, { backgroundColor: theme.separator + '30', color: theme.text }]}
-                        placeholder="09:00"
-                        placeholderTextColor={theme.icon}
-                        value={nuevaHora}
-                        onChangeText={handleChangeHora}
-                        keyboardType="numeric"
-                        maxLength={5}
-                      />
+                      <TouchableOpacity
+                        style={[styles.input, styles.pickerButton, { backgroundColor: theme.separator + '30' }]}
+                        onPress={() => { setShowTimePicker(!showTimePicker); setShowDatePicker(false); }}
+                      >
+                        <Text style={[styles.pickerButtonText, { color: selectedTime ? theme.text : theme.icon }]}>
+                          {selectedTime ? formatTimeDisplay(selectedTime) : '09:00'}
+                        </Text>
+                        <Ionicons name="time-outline" size={20} color={theme.icon} />
+                      </TouchableOpacity>
                     </View>
                   </View>
+
+                  {showDatePicker && (
+                    <View style={[styles.datePickerContainer, { backgroundColor: theme.separator + '20', borderRadius: 16, marginBottom: 20 }]}>
+                      <DateTimePicker
+                        value={selectedDate || new Date()}
+                        mode="date"
+                        display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                        onChange={handleDateChange}
+                        minimumDate={new Date()}
+                        locale="es-ES"
+                        themeVariant={colorScheme === 'dark' ? 'dark' : 'light'}
+                      />
+                      {Platform.OS === 'ios' && (
+                        <TouchableOpacity
+                          style={[styles.datePickerDoneBtn, { backgroundColor: theme.tint }]}
+                          onPress={() => {
+                            if (!selectedDate) setSelectedDate(new Date());
+                            setShowDatePicker(false);
+                          }}
+                        >
+                          <Text style={styles.datePickerDoneText}>Listo</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+
+                  {showTimePicker && (
+                    <View style={[styles.datePickerContainer, { backgroundColor: theme.separator + '20', borderRadius: 16, marginBottom: 20 }]}>
+                      <DateTimePicker
+                        value={selectedTime || (() => { const d = new Date(); d.setHours(9, 0, 0, 0); return d; })()}
+                        mode="time"
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        onChange={handleTimeChange}
+                        locale="es-ES"
+                        is24Hour={true}
+                        themeVariant={colorScheme === 'dark' ? 'dark' : 'light'}
+                      />
+                      {Platform.OS === 'ios' && (
+                        <TouchableOpacity
+                          style={[styles.datePickerDoneBtn, { backgroundColor: theme.tint }]}
+                          onPress={() => {
+                            if (!selectedTime) {
+                              const d = new Date(); d.setHours(9, 0, 0, 0);
+                              setSelectedTime(d);
+                            }
+                            setShowTimePicker(false);
+                          }}
+                        >
+                          <Text style={styles.datePickerDoneText}>Listo</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
 
                   {/* SECCIÓN NOTIFICACIONES */}
                   <View style={[styles.settingRow, { borderBottomColor: theme.separator + '50' }]}>
@@ -762,6 +775,66 @@ export default function ParcialesScreen() {
             </RNAnimated.View>
           </View>
         </KeyboardAvoidingView>
+
+        {/* MODAL SELECTOR DE MATERIA (dentro del sheet para renderizar encima) */}
+        <Modal
+          visible={showMateriaPicker}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowMateriaPicker(false)}
+        >
+          <View style={styles.pickerModalContainer}>
+            <View style={[styles.pickerModalContent, { backgroundColor: theme.backgroundSecondary }]}>
+              <View style={styles.pickerModalHeader}>
+                <Text style={[styles.pickerModalTitle, { color: theme.text }]}>Seleccionar Materia</Text>
+                <TouchableOpacity onPress={() => setShowMateriaPicker(false)}>
+                  <Ionicons name="close-circle" size={28} color={theme.icon} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.pickerList} showsVerticalScrollIndicator={false}>
+                <TouchableOpacity
+                  style={[
+                    styles.pickerItem,
+                    { borderBottomColor: theme.separator + '30' },
+                    !selectedMateriaId && { backgroundColor: theme.tint + '20' }
+                  ]}
+                  onPress={() => {
+                    setSelectedMateriaId(null);
+                    setSelectedMateriaNombre('');
+                    setShowMateriaPicker(false);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                >
+                  <Text style={[styles.pickerItemText, { color: theme.icon, fontStyle: 'italic' }]}>Sin materia asociada</Text>
+                  {!selectedMateriaId && (
+                    <Ionicons name="checkmark-circle" size={22} color={theme.tint} />
+                  )}
+                </TouchableOpacity>
+                {materias.map((m) => (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[
+                      styles.pickerItem,
+                      { borderBottomColor: theme.separator + '30' },
+                      selectedMateriaId === m.id && { backgroundColor: theme.tint + '20' }
+                    ]}
+                    onPress={() => {
+                      setSelectedMateriaId(m.id);
+                      setSelectedMateriaNombre(m.nombre);
+                      setShowMateriaPicker(false);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}
+                  >
+                    <Text style={[styles.pickerItemText, { color: theme.text }]}>{m.nombre}</Text>
+                    {selectedMateriaId === m.id && (
+                      <Ionicons name="checkmark-circle" size={22} color={theme.tint} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </Modal>
     </View>
   );
@@ -966,5 +1039,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     flex: 1,
+  },
+  datePickerContainer: {
+    overflow: 'hidden',
+    padding: 8,
+  },
+  datePickerDoneBtn: {
+    alignSelf: 'center',
+    paddingHorizontal: 30,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  datePickerDoneText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });
