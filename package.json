@@ -6,8 +6,14 @@
         "frontend",
         "backend"
     ],
+    "main": "frontend/node_modules/expo-router/entry",
     "scripts": {
+        "start": "npm run frontend",
         "frontend": "cd frontend && npm start",
-        "backend": "cd backend && npm start"
+        "backend": "cd backend && npm start",
+        "postinstall": "npm install --prefix frontend && npm install --prefix backend"
+    },
+    "devDependencies": {
+        "semver": "^6.3.1"
     }
 }
