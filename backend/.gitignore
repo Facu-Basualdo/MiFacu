@@ -1,3 +1,140 @@
-node_modules
-dist
+# ==========================================
+# 📦 DEPENDENCIAS
+# ==========================================
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.pnp
+.pnp.js
+
+# ==========================================
+# 🔨 BUILD & DIST
+# ==========================================
+dist/
+dist-ssr/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# ==========================================
+# 🔐 VARIABLES DE ENTORNO Y SECRETOS
+# ==========================================
 .env
+.env.local
+docker/env
+.env.development.local
+.env.test.local
+.env.production.local
+*.local
+
+# ==========================================
+# 📝 LOGS
+# ==========================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ==========================================
+# 🧪 TESTING
+# ==========================================
+coverage/
+*.lcov
+.nyc_output/
+test-results/
+playwright-report/
+
+# ==========================================
+# 💻 EDITOR & IDE
+# ==========================================
+# VSCode
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Other editors
+.DS_Store
+.AppleDouble
+.LSOverride
+*.suo
+.ntvs
+*.njsproj
+*.sln
+*.sw?
+*~
+
+# ==========================================
+# 🗂️ SISTEMA OPERATIVO
+# ==========================================
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ==========================================
+# 🔧 OTROS
+# ==========================================
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.cache
+
+# Debug files
+.vite-inspect/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# ==========================================
+# 🤖 AI AGENTS CONFIG (local)
+# ==========================================
+.agents/
+.claude/
+.cursor/
+.gemini/
+.opencode/
+nul

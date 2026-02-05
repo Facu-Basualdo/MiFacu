@@ -1,44 +1,140 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
+# ==========================================
+# 📦 DEPENDENCIAS
+# ==========================================
 node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.pnp
+.pnp.js
 
-# Expo
-.expo/
+# ==========================================
+# 🔨 BUILD & DIST
+# ==========================================
 dist/
-web-build/
-expo-env.d.ts
+dist-ssr/
+build/
+.next/
+out/
+*.tsbuildinfo
 
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
+# ==========================================
+# 🔐 VARIABLES DE ENTORNO Y SECRETOS
+# ==========================================
+.env
+.env.local
+docker/env
+.env.development.local
+.env.test.local
+.env.production.local
+*.local
 
-# Metro
-.metro-health-check*
+# ==========================================
+# 📝 LOGS
+# ==========================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
+# ==========================================
+# 🧪 TESTING
+# ==========================================
+coverage/
+*.lcov
+.nyc_output/
+test-results/
+playwright-report/
+
+# ==========================================
+# 💻 EDITOR & IDE
+# ==========================================
+# VSCode
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Other editors
+.DS_Store
+.AppleDouble
+.LSOverride
+*.suo
+.ntvs
+*.njsproj
+*.sln
+*.sw?
+*~
+
+# ==========================================
+# 🗂️ SISTEMA OPERATIVO
+# ==========================================
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
 # macOS
 .DS_Store
-*.pem
+.AppleDouble
+.LSOverride
+Icon
+._*
 
-# local env files
-.env*.local
+# Linux
+*~
+.directory
+.Trash-*
 
-# typescript
+# ==========================================
+# 🔧 OTROS
+# ==========================================
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.cache
+
+# Debug files
+.vite-inspect/
+
+# TypeScript cache
 *.tsbuildinfo
 
-app-example
+# Optional npm cache directory
+.npm
 
-# generated native folders
-/ios
-/android
-node_modules
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# ==========================================
+# 🤖 AI AGENTS CONFIG (local)
+# ==========================================
+.agents/
+.claude/
+.cursor/
+.gemini/
+.opencode/
+nul

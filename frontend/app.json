@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "mifacumobile",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.plaidlabs.mifacu",
@@ -54,14 +53,11 @@
         "expo-build-properties",
         {
           "ios": {
-            "newArchEnabled": false,
             "otherCPlusPlusFlags": [
               "-DFOLLY_CFG_NO_COROUTINES=1"
             ]
           },
-          "android": {
-            "newArchEnabled": false
-          }
+          "android": {}
         }
       ],
       "@react-native-community/datetimepicker",
@@ -69,7 +65,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": false
     },
     "extra": {
       "router": {},
