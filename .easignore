@@ -17,5 +17,4 @@ docker/
 node_modules/
 
 # Ignorar archivos locales
-.env
 *.log
