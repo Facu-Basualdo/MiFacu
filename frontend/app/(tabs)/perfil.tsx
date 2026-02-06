@@ -47,6 +47,9 @@ export default function PerfilScreen() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [carrera, setCarrera] = useState('No seleccionada');
   const [stats, setStats] = useState<Stats>({ aprobadas: 0, regulares: 0, cursando: 0, totalPlan: 0 });
+  const [showDevToggle, setShowDevToggle] = useState(false);
+  const devTapCount = useRef(0);
+  const devTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -147,6 +150,18 @@ export default function PerfilScreen() {
       Alert.alert('Error', 'No se pudo actualizar la carrera');
     }
   }, [user, loadData]);
+
+  const handleVersionTap = useCallback(() => {
+    devTapCount.current += 1;
+    if (devTapTimer.current) clearTimeout(devTapTimer.current);
+    devTapTimer.current = setTimeout(() => { devTapCount.current = 0; }, 2000);
+
+    if (devTapCount.current >= 7) {
+      devTapCount.current = 0;
+      setShowDevToggle((prev) => !prev);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, []);
 
   const progreso = stats.totalPlan > 0 ? Math.round((stats.aprobadas / stats.totalPlan) * 100) : 0;
 
@@ -389,20 +404,20 @@ export default function PerfilScreen() {
               <Ionicons name="chevron-forward" size={18} color={theme.separator} />
             </TouchableOpacity>
 
-            {/* DEV: Premium Toggle - Visible en desarrollo o modo mock (Expo Go) */}
-            {(__DEV__ || __mockMode) && (
+            {/* DEV: Premium Toggle - Visible en desarrollo, modo mock, o gesto secreto */}
+            {(__DEV__ || __mockMode || showDevToggle) && (
               <View style={[styles.optionRow, { borderBottomWidth: 0 }]}>
                 <View style={[styles.optionIcon, { backgroundColor: __mockMode ? '#FF9500' : '#FF3B30' }]}>
                   <Ionicons name="flask" size={18} color="white" />
                 </View>
                 <View style={styles.optionContent}>
                   <Text style={[styles.optionLabel, { color: theme.text }]}>
-                    Premium {__mockMode ? '(Demo)' : '(DEV)'}
+                    Premium {__mockMode ? '(Demo)' : __DEV__ ? '(DEV)' : '(Test)'}
                   </Text>
                   <Text style={[styles.optionHint, { color: theme.icon }]}>
                     {__mockMode
                       ? 'Modo demo - RevenueCat no disponible'
-                      : (__devOverrideActive ? 'Override activo' : 'Usar estado real')
+                      : (__devOverrideActive ? 'Override activo' : 'Simular estado premium')
                     }
                   </Text>
                 </View>
@@ -421,8 +436,12 @@ export default function PerfilScreen() {
           </View>
         </View>
 
-        {/* VERSION */}
-        <Text style={[styles.versionText, { color: theme.icon }]}>miFACU v1.0.0</Text>
+        {/* VERSION — tocar 7 veces para modo dev */}
+        <TouchableOpacity onPress={handleVersionTap} activeOpacity={0.6}>
+          <Text style={[styles.versionText, { color: theme.icon }]}>
+            miFACU v1.0.0{showDevToggle ? ' (Dev)' : ''}
+          </Text>
+        </TouchableOpacity>
 
         <View style={{ height: 120 }} />
       </Animated.ScrollView>

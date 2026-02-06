@@ -9,7 +9,7 @@ import { supabase } from '../config/supabase';
 // - Dispositivo físico: 'http://192.168.0.20:4000' (tu IP local actual)
 
 // Detección automática del entorno
-let API_URL = 'https://mifacu-backend-production.up.railway.app'; // URL de Railway de Producción
+let API_URL = 'https://mifacu-production.up.railway.app'; // URL de Railway de Producción
 
 if (__DEV__) {
     // En desarrollo, usamos la IP local para dispositivos físicos
