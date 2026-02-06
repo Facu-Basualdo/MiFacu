@@ -38,20 +38,11 @@ const INACTIVE_COLOR = 'rgba(255,255,255,0.45)';
 const SVG_HEIGHT = TAB_BAR_HEIGHT + NOTCH_DEPTH + SAFE_BOTTOM;
 
 function buildNotchPath(w: number): string {
-  const mid = w / 2;
-  const halfNotch = NOTCH_WIDTH / 2;
   const top = NOTCH_DEPTH;
 
-  // Perfect circular arc using SVG arc command.
-  // Calculate the exact radius for a circle passing through the notch edges
-  // and dipping to NOTCH_DEPTH below the bar top.
-  const r = (halfNotch * halfNotch + NOTCH_DEPTH * NOTCH_DEPTH) / (2 * NOTCH_DEPTH);
-
+  // Flat top bar — no convex bump behind the hero button
   return [
     `M 0 ${top}`,
-    `L ${mid - halfNotch} ${top}`,
-    // Circular arc from left edge to right edge, curving downward
-    `A ${r} ${r} 0 1 1 ${mid + halfNotch} ${top}`,
     `L ${w} ${top}`,
     `L ${w} ${SVG_HEIGHT}`,
     `L 0 ${SVG_HEIGHT}`,
@@ -228,6 +219,11 @@ export default function TabsLayout() {
         options={{
           title: 'Herramientas',
           tabBarButton: (props) => <HeroCenterButton {...props} />,
+          tabBarItemStyle: {
+            height: TAB_BAR_HEIGHT,
+            padding: 0,
+            overflow: 'visible',
+          },
         }}
       />
 
@@ -272,13 +268,16 @@ const styles = StyleSheet.create({
     left: 0,
   },
 
-  // Hero center button
+  // Hero center button — centered with left:50% + negative margin for pixel-perfect alignment
   heroWrapper: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    // Lift the button so it sits inside the notch cradle
+    position: 'absolute',
     top: -(HERO_LIFT),
+    left: '50%',
+    marginLeft: -(HERO_SIZE / 2),
+    width: HERO_SIZE,
+    height: HERO_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   heroPressable: {
     width: HERO_SIZE,

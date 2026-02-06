@@ -1,10 +1,25 @@
 import React, { useState, memo, useCallback, useRef } from 'react';
 import { View, Text, TouchableOpacity, TextInput, StyleSheet, Animated } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { DataRepository } from '../../services/dataRepository';
 import type { ThemeColors, Recordatorio } from '../../types';
 import { mifacuNavy } from '../../constants/theme';
 import { useTheme } from '../../context/ThemeContext';
+
+const formatTaskDate = (fechaStr: string): string => {
+  const fecha = new Date(fechaStr + 'T00:00:00');
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const diff = Math.round((fecha.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diff === 0) return 'Hoy';
+  if (diff === -1) return 'Ayer';
+  if (diff === 1) return 'Mañana';
+
+  const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  return `${fecha.getDate()} ${meses[fecha.getMonth()]}`;
+};
 
 interface TaskItemProps {
   task: Recordatorio;
@@ -15,7 +30,7 @@ interface TaskItemProps {
 
 /**
  * Individual task item with edit and complete functionality
- * Optimized with React.memo
+ * Attio-inspired design with date badges
  */
 export const TaskItem = memo<TaskItemProps>(function TaskItem({
   task,
@@ -58,6 +73,9 @@ export const TaskItem = memo<TaskItemProps>(function TaskItem({
       onDelete();
     });
   }, [opacity, scale, onDelete]);
+
+  const dateLabel = task.fecha ? formatTaskDate(task.fecha) : null;
+  const isOverdue = task.fecha ? new Date(task.fecha + 'T00:00:00') < new Date(new Date().toDateString()) : false;
 
   return (
     <Animated.View
@@ -108,9 +126,33 @@ export const TaskItem = memo<TaskItemProps>(function TaskItem({
           accessibilityLabel={`Tarea: ${text}. Toca para editar`}
           accessibilityRole="button"
         >
-          <Text style={[styles.taskText, { color: theme.text, fontWeight: '500' }]} numberOfLines={2}>{text}</Text>
+          <Text style={[styles.taskText, { color: theme.text }]} numberOfLines={2}>{text}</Text>
           {task.descripcion && (
             <Text style={[styles.taskDescription, { color: theme.icon }]}>{task.descripcion}</Text>
+          )}
+          {dateLabel && (
+            <View style={[
+              styles.dateBadge,
+              {
+                backgroundColor: isOverdue
+                  ? (isDarkMode ? 'rgba(220,38,38,0.15)' : '#FEE2E2')
+                  : (isDarkMode ? 'rgba(99,102,241,0.15)' : '#EEF2FF'),
+              },
+            ]}>
+              <Ionicons
+                name="calendar-outline"
+                size={11}
+                color={isOverdue ? '#DC2626' : (isDarkMode ? '#818CF8' : '#6366F1')}
+              />
+              <Text style={[
+                styles.dateBadgeText,
+                {
+                  color: isOverdue ? '#DC2626' : (isDarkMode ? '#818CF8' : '#6366F1'),
+                },
+              ]}>
+                {dateLabel}
+              </Text>
+            </View>
           )}
         </TouchableOpacity>
       )}
@@ -122,8 +164,8 @@ const styles = StyleSheet.create({
   taskItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingVertical: 11,
-    paddingHorizontal: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
   taskCheckbox: {
     marginRight: 12,
@@ -139,8 +181,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   taskText: {
-    fontSize: 16,
-    fontWeight: '400',
+    fontSize: 15,
+    fontWeight: '500',
     lineHeight: 21,
   },
   taskDescription: {
@@ -148,11 +190,25 @@ const styles = StyleSheet.create({
     marginTop: 2,
     lineHeight: 18,
   },
+  dateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginTop: 6,
+  },
+  dateBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
   editContainer: {
     flex: 1,
   },
   taskInputEdit: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '500',
     padding: 0,
   },

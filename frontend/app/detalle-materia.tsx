@@ -15,8 +15,34 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { materiasApi } from '../src/services/api';
+import { DataRepository } from '../src/services/dataRepository';
 import { useAuth } from '../src/context/AuthContext';
 import { Colors } from '../src/constants/theme';
+
+const MESES_CORTOS = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+
+const getTiempoRestante = (fechaStr: string) => {
+  const fecha = new Date(fechaStr);
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const diffDays = Math.ceil((fecha.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return 'Finalizado';
+  if (diffDays === 0) return '¡Hoy!';
+  if (diffDays === 1) return 'Mañana';
+  return `En ${diffDays} días`;
+};
+
+interface Examen {
+  id: number;
+  titulo: string;
+  tipo: string;
+  fecha: string;
+  hora: string;
+  color: string;
+  dia: number;
+  mes: number;
+  mesLabel: string;
+}
 
 interface Materia {
   id: number;
@@ -46,6 +72,9 @@ export default function DetalleMateriaScreen() {
   const [nuevaHora, setNuevaHora] = useState('');
   const [nuevaAula, setNuevaAula] = useState('');
 
+  // Exámenes reales asociados a la materia
+  const [examenes, setExamenes] = useState<Examen[]>([]);
+
   const loadMateria = async () => {
     if (!id) return;
     try {
@@ -67,6 +96,36 @@ export default function DetalleMateriaScreen() {
         setNuevoDia(item.dia || 'LU');
         setNuevaHora(item.hora?.toString() || '18');
         setNuevaAula(item.aula || 'Sin aula');
+      }
+      // Cargar parciales/entregas asociados a esta materia
+      try {
+        const allRecordatorios = await DataRepository.getRecordatorios();
+        const filtered = (allRecordatorios || [])
+          .filter((r: any) => {
+            const tipoLower = (r.tipo || '').toLowerCase();
+            const matchesTipo = tipoLower === 'parcial' || tipoLower === 'entrega';
+            const matchesMateria = r.materiaId?.toString() === id.toString();
+            return matchesTipo && matchesMateria;
+          })
+          .map((r: any) => {
+            const fecha = new Date(r.fecha);
+            return {
+              id: r.id,
+              titulo: r.nombre || r.titulo,
+              tipo: (r.tipo || '').charAt(0).toUpperCase() + (r.tipo || '').slice(1).toLowerCase(),
+              fecha: r.fecha,
+              hora: r.hora ? r.hora.toString().slice(0, 5) : '09:00',
+              color: r.color || '#0A84FF',
+              dia: fecha.getDate(),
+              mes: fecha.getMonth(),
+              mesLabel: MESES_CORTOS[fecha.getMonth()] || '',
+            };
+          })
+          .sort((a: Examen, b: Examen) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+
+        setExamenes(filtered);
+      } catch (err) {
+        console.error('Error cargando exámenes:', err);
       }
     } catch (e) {
       console.error("Error cargando materia:", e);
@@ -218,19 +277,55 @@ export default function DetalleMateriaScreen() {
           {editMode && <Text style={[styles.hint, { color: theme.icon }]}>Toca el ✔️ arriba para guardar.</Text>}
         </View>
 
-        {/* Info extra estática */}
+        {/* Parciales y entregas reales */}
         <View style={[styles.card, { backgroundColor: theme.backgroundSecondary }]}>
-          <Text style={[styles.cardTitle, { color: theme.text }]}>Próximos Exámenes</Text>
-          <View style={styles.examRow}>
-            <View style={[styles.dateBox, { borderColor: colorTema }]}>
-              <Text style={[styles.dayText, { color: colorTema }]}>15</Text>
-              <Text style={[styles.monthText, { color: colorTema }]}>MAY</Text>
+          <Text style={[styles.cardTitle, { color: theme.text }]}>Parciales y Entregas</Text>
+          {examenes.length === 0 ? (
+            <View style={styles.emptyExams}>
+              <Ionicons name="document-text-outline" size={28} color={theme.separator} />
+              <Text style={[styles.emptyExamsText, { color: theme.icon }]}>
+                No hay parciales o entregas cargados para esta materia
+              </Text>
             </View>
-            <View>
-              <Text style={[styles.examTitle, { color: theme.text }]}>Primer Parcial</Text>
-              <Text style={[styles.examSubtitle, { color: theme.icon }]}>Unidades 1 a 4</Text>
-            </View>
-          </View>
+          ) : (
+            examenes.map((exam, index) => {
+              const tiempoRestante = getTiempoRestante(exam.fecha);
+              const esPasado = tiempoRestante === 'Finalizado';
+              return (
+                <View
+                  key={exam.id}
+                  style={[
+                    styles.examRow,
+                    index < examenes.length - 1 && { marginBottom: 14 },
+                    esPasado && { opacity: 0.5 },
+                  ]}
+                >
+                  <View style={[styles.dateBox, { borderColor: exam.color }]}>
+                    <Text style={[styles.dateBoxDay, { color: exam.color }]}>{exam.dia}</Text>
+                    <Text style={[styles.dateBoxMonth, { color: exam.color }]}>{exam.mesLabel}</Text>
+                  </View>
+                  <View style={styles.examInfo}>
+                    <View style={styles.examTitleRow}>
+                      <Text style={[styles.examTitle, { color: theme.text }]} numberOfLines={1}>
+                        {exam.titulo}
+                      </Text>
+                      <View style={[styles.tipoBadge, { backgroundColor: exam.color + '18' }]}>
+                        <Text style={[styles.tipoBadgeText, { color: exam.color }]}>{exam.tipo}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.examDetails}>
+                      <Text style={[styles.examTime, { color: theme.icon }]}>
+                        {exam.hora} hs
+                      </Text>
+                      <Text style={[styles.examCountdown, { color: esPasado ? theme.icon : colorTema }]}>
+                        {tiempoRestante}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })
+          )}
         </View>
 
       </ScrollView>
@@ -261,10 +356,21 @@ const styles = StyleSheet.create({
   hint: { fontSize: 10, textAlign: 'center', marginTop: 10, fontStyle: 'italic' },
 
   // Estilos Examen
+  emptyExams: { alignItems: 'center', paddingVertical: 16, gap: 8 },
+  emptyExamsText: { fontSize: 13, textAlign: 'center', paddingHorizontal: 10 },
   examRow: { flexDirection: 'row', alignItems: 'center' },
-  dateBox: { width: 50, height: 50, borderRadius: 10, borderWidth: 2, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  dayText: { fontSize: 18, fontWeight: 'bold' },
-  monthText: { fontSize: 10, fontWeight: 'bold' },
-  examTitle: { fontSize: 16, fontWeight: 'bold' },
-  examSubtitle: { fontSize: 12 },
+  dateBox: {
+    width: 50, height: 50, borderRadius: 12, borderWidth: 2,
+    justifyContent: 'center', alignItems: 'center', marginRight: 14,
+  },
+  dateBoxDay: { fontSize: 18, fontWeight: '800', lineHeight: 20 },
+  dateBoxMonth: { fontSize: 10, fontWeight: '700' },
+  examInfo: { flex: 1 },
+  examTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  examTitle: { fontSize: 15, fontWeight: '600', flexShrink: 1 },
+  tipoBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5 },
+  tipoBadgeText: { fontSize: 10, fontWeight: '700' },
+  examDetails: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  examTime: { fontSize: 13 },
+  examCountdown: { fontSize: 12, fontWeight: '600' },
 });

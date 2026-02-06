@@ -30,6 +30,7 @@ import { useTheme } from '../../src/context/ThemeContext';
 import { useAuth } from '../../src/context/AuthContext';
 import { DataRepository } from '../../src/services/dataRepository';
 import { HomeSkeleton } from '../../src/components/Skeleton';
+import { usePremium } from '../../src/context/PremiumContext';
 
 // Hooks
 import { useHomeData } from '../../src/hooks/useHomeData';
@@ -124,6 +125,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { colorScheme, isDark: isDarkMode } = useTheme();
+  const { isPro } = usePremium();
   const theme = Colors[colorScheme] as ThemeColors;
 
   // Data hook
@@ -484,12 +486,17 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   onPress={() => router.push('/perfil')}
                   activeOpacity={0.8}
-                  style={[styles.headerAvatarContainer, { borderColor: mifacuGold }]}
+                  style={[styles.headerAvatarContainer, { borderColor: isPro ? mifacuGold : 'rgba(255,255,255,0.3)' }]}
                 >
                   <Image
                     source={{ uri: user?.user_metadata?.avatar_url || 'https://i.pravatar.cc/100?img=33' }}
                     style={styles.avatarLarge}
                   />
+                  {isPro && (
+                    <View style={styles.premiumAvatarBadge}>
+                      <Ionicons name="star" size={10} color="#FFFFFF" />
+                    </View>
+                  )}
                 </TouchableOpacity>
               </View>
 
@@ -680,43 +687,65 @@ export default function HomeScreen() {
                   </View>
                 ))}
 
-                {/* Separator between classes and tasks */}
-                {clasesHoy.length > 0 && (tasks.length > 0 || true) && (
-                  <View style={[styles.timelineSeparator, { borderColor: separatorColor }]} />
-                )}
-
-                {/* Tasks */}
-                {tasks.length > 0 && tasks.map((task, index) => (
-                  <AnimatedItem key={task.id} index={index} delay={40}>
-                    <View style={styles.taskItemWrapper}>
-                      <SwipeableTask onDelete={() => handleCompleteTask(task.id)} theme={theme}>
-                        <TaskItem
-                          task={task}
-                          onDelete={() => handleCompleteTask(task.id)}
-                          theme={theme}
-                          separatorColor={separatorColor}
-                        />
-                      </SwipeableTask>
-                    </View>
-                  </AnimatedItem>
-                ))}
-
-                {/* Empty state */}
-                {clasesHoy.length === 0 && tasks.length === 0 && (
+                {/* Empty state — only for classes */}
+                {clasesHoy.length === 0 && (
                   <View style={styles.emptyTimeline}>
-                    <Ionicons name="leaf-outline" size={28} color={theme.separator} />
+                    <Ionicons name="sunny-outline" size={28} color={theme.separator} />
                     <Text style={[styles.emptyTimelineText, { color: theme.icon }]}>
-                      Nada programado hoy
+                      Sin clases hoy
                     </Text>
                     <Text style={[styles.emptyTimelineHint, { color: theme.separator }]}>
-                      Agrega una tarea para empezar
+                      Día libre de cursada
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* ═══ TAREAS — Attio style ═══ */}
+            <View style={styles.tasksSection}>
+              <View style={styles.tasksSectionHeader}>
+                <Text style={[styles.tasksTitle, { color: theme.text }]}>Tareas</Text>
+                {tasks.length > 0 && (
+                  <View style={[styles.countBadge, { backgroundColor: isDarkMode ? theme.tint + '20' : mifacuNavy + '12' }]}>
+                    <Text style={[styles.countBadgeText, { color: isDarkMode ? theme.tint : mifacuNavy }]}>
+                      {tasks.length}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={[styles.tasksContainer, { backgroundColor: cardColor, borderColor: isDarkMode ? '#38383A' : '#E2E8F0' }]}>
+                {tasks.length > 0 ? (
+                  tasks.map((task, index) => (
+                    <AnimatedItem key={task.id} index={index} delay={40}>
+                      <View>
+                        <SwipeableTask onDelete={() => handleCompleteTask(task.id)} theme={theme}>
+                          <TaskItem
+                            task={task}
+                            onDelete={() => handleCompleteTask(task.id)}
+                            theme={theme}
+                            separatorColor={separatorColor}
+                          />
+                        </SwipeableTask>
+                        {index < tasks.length - 1 && (
+                          <View style={[styles.taskSeparator, { backgroundColor: separatorColor }]} />
+                        )}
+                      </View>
+                    </AnimatedItem>
+                  ))
+                ) : (
+                  <View style={styles.emptyTasks}>
+                    <Ionicons name="checkmark-circle-outline" size={28} color={theme.separator} />
+                    <Text style={[styles.emptyTasksText, { color: theme.icon }]}>
+                      Sin tareas pendientes
                     </Text>
                   </View>
                 )}
 
-                {/* Task Input — integrated at the bottom */}
+                {/* Task Input */}
                 <View style={[styles.taskInputRow, { borderTopColor: separatorColor }]}>
-                  <View style={[styles.timelineDot, styles.timelineDotEmpty, { borderColor: timelineColor + '60' }]} />
+                  <View style={[styles.inputDot, { borderColor: theme.separator }]} />
                   <View style={styles.taskInputFields}>
                     <TextInput
                       ref={taskInputRef}
@@ -912,7 +941,7 @@ const styles = StyleSheet.create({
 
   // Hero gradient header — compact
   heroGradient: {
-    paddingTop: 50,
+    paddingTop: 10,
     paddingBottom: 16,
     paddingHorizontal: 20,
   },
@@ -938,8 +967,22 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     padding: 2,
     borderRadius: 24,
+    position: 'relative',
   },
   avatarLarge: { width: 40, height: 40, borderRadius: 20 },
+  premiumAvatarBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: mifacuGold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: mifacuNavy,
+  },
 
   // Progress Card - Collapsible in header gradient
   progressCardContainer: {
@@ -1201,8 +1244,7 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
 
-  // Tasks (inside timeline)
-  taskItemWrapper: {},
+  // Timeline empty state
   emptyTimeline: {
     paddingVertical: 28,
     paddingHorizontal: 16,
@@ -1212,14 +1254,69 @@ const styles = StyleSheet.create({
   emptyTimelineText: { fontSize: 15, fontWeight: '500' },
   emptyTimelineHint: { fontSize: 13 },
 
+  // ═══ TASKS SECTION (Attio style) ═══
+  tasksSection: {
+    paddingHorizontal: 20,
+    marginTop: 28,
+  },
+  tasksSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  tasksTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  countBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  countBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  tasksContainer: {
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  taskSeparator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 50,
+  },
+  emptyTasks: {
+    paddingVertical: 28,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    gap: 6,
+  },
+  emptyTasksText: { fontSize: 15, fontWeight: '500' },
+
   // Task Input (integrated)
   taskInputRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 0,
+  },
+  inputDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    backgroundColor: 'transparent',
+    marginRight: 12,
+    marginTop: 4,
   },
   taskInputFields: {
     flex: 1,
