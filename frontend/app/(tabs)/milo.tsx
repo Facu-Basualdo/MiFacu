@@ -18,6 +18,7 @@ import MiloMascot, { MiloState } from '../../src/components/milo/MiloMascot';
 import StatsPanel from '../../src/components/milo/StatsPanel';
 import SessionHistory from '../../src/components/milo/SessionHistory';
 import { pomodoroApi, gamificationApi } from '../../src/services/api';
+import { PremiumGate } from '../../src/components/premium';
 
 // Duolingo-inspired colors
 const MILO_THEME = {
@@ -35,7 +36,7 @@ const MILO_THEME = {
   },
 };
 
-export default function MiloScreen() {
+function MiloContent() {
   const { isDark } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
@@ -137,6 +138,14 @@ export default function MiloScreen() {
         />
       </ScrollView>
     </View>
+  );
+}
+
+export default function MiloScreen() {
+  return (
+    <PremiumGate featureName="Milo - Tu Compañero de Estudio">
+      <MiloContent />
+    </PremiumGate>
   );
 }
 

@@ -19,6 +19,7 @@ import { useTheme } from '../src/context/ThemeContext';
 import { useTimelineData } from '../src/hooks/useTimelineData';
 import SummaryCard from '../src/components/timeline/SummaryCard';
 import TimelineChart from '../src/components/timeline/TimelineChart';
+import { PremiumGate } from '../src/components/premium';
 
 const EVENT_LEGEND = [
   { color: '#F59E0B', label: 'Parcial' },
@@ -26,7 +27,7 @@ const EVENT_LEGEND = [
   { color: '#3B82F6', label: 'Entrega' },
 ];
 
-export default function LineaDeTiempoScreen() {
+function LineaDeTiempoContent() {
   const router = useRouter();
   const { colorScheme, isDark } = useTheme();
   const theme = Colors[colorScheme];
@@ -139,6 +140,14 @@ export default function LineaDeTiempoScreen() {
         ) : null}
       </SafeAreaView>
     </View>
+  );
+}
+
+export default function LineaDeTiempoScreen() {
+  return (
+    <PremiumGate featureName="Calendario Académico">
+      <LineaDeTiempoContent />
+    </PremiumGate>
   );
 }
 

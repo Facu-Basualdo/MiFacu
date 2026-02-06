@@ -29,6 +29,7 @@ import {
   EstadoVisual,
 } from '../src/utils/estadoMapper';
 import { useTheme } from '../src/context/ThemeContext';
+import { PremiumGate } from '../src/components/premium';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -239,7 +240,7 @@ const StatsBar = React.memo(({ stats, isDark }: StatsBarProps) => {
   );
 });
 
-export default function SimuladorScreen() {
+function SimuladorContent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isDark } = useTheme();
@@ -650,6 +651,14 @@ export default function SimuladorScreen() {
         isDark={isDark}
       />
     </View>
+  );
+}
+
+export default function SimuladorScreen() {
+  return (
+    <PremiumGate featureName="Simulador de Correlativas">
+      <SimuladorContent />
+    </PremiumGate>
   );
 }
 

@@ -26,6 +26,7 @@ import { supabase } from '../../src/config/supabase';
 import { CarreraModal } from '../../src/components/home';
 import { FeedbackModal } from '../../src/components/profile/FeedbackModal';
 import { mifacuNavy, mifacuGold } from '../../src/constants/theme';
+import { usePremium } from '../../src/context/PremiumContext';
 
 interface Stats {
   aprobadas: number;
@@ -38,6 +39,7 @@ export default function PerfilScreen() {
   const router = useRouter();
   const { colorScheme, isDark, toggleTheme } = useTheme();
   const { user, signOut } = useAuth();
+  const { isPro, __devSetPremium, __devOverrideActive, __mockMode } = usePremium();
   const theme = Colors[colorScheme];
 
   const [privacyMode, setPrivacyMode] = useState(false);
@@ -285,6 +287,51 @@ export default function PerfilScreen() {
           <View style={[styles.optionsContainer, { backgroundColor: theme.backgroundSecondary }]}>
 
 
+            {/* Premium Button/Badge */}
+            {isPro ? (
+              <View style={[styles.optionRow, { borderBottomColor: theme.separator }]}>
+                <View style={[styles.optionIcon, { backgroundColor: mifacuGold }]}>
+                  <Ionicons name="checkmark-circle" size={18} color="white" />
+                </View>
+                <View style={styles.optionContent}>
+                  <View style={styles.premiumBadgeRow}>
+                    <Text style={[styles.optionLabel, { color: theme.text }]}>MiFacu Premium</Text>
+                    <View style={[styles.premiumBadge, { backgroundColor: mifacuGold + '20' }]}>
+                      <Text style={[styles.premiumBadgeText, { color: mifacuGold }]}>Activo</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.optionHint, { color: mifacuGold }]}>
+                    Eres miembro Premium
+                  </Text>
+                </View>
+                {__devOverrideActive && (
+                  <TouchableOpacity
+                    onPress={() => __devSetPremium(false)}
+                    style={styles.devToggle}
+                  >
+                    <Text style={[styles.devToggleText, { color: theme.icon }]}>DEV</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styles.optionRow, { borderBottomColor: theme.separator }]}
+                onPress={() => router.push('/subscription')}
+                activeOpacity={0.6}
+              >
+                <View style={[styles.optionIcon, { backgroundColor: mifacuGold }]}>
+                  <Ionicons name="star" size={18} color="white" />
+                </View>
+                <View style={styles.optionContent}>
+                  <Text style={[styles.optionLabel, { color: theme.text }]}>MiFacu Premium</Text>
+                  <Text style={[styles.optionHint, { color: theme.icon }]}>
+                    Desbloquear funciones
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={theme.separator} />
+              </TouchableOpacity>
+            )}
+
             {/* Change Career */}
             <TouchableOpacity
               style={[styles.optionRow, { borderBottomWidth: 0 }]}
@@ -326,7 +373,7 @@ export default function PerfilScreen() {
           <Text style={[styles.sectionTitle, { color: theme.icon }]}>SOPORTE</Text>
           <View style={[styles.optionsContainer, { backgroundColor: theme.backgroundSecondary }]}>
             <TouchableOpacity
-              style={styles.optionRow}
+              style={[styles.optionRow, { borderBottomColor: theme.separator }]}
               onPress={() => setShowFeedbackModal(true)}
               activeOpacity={0.6}
             >
@@ -341,6 +388,36 @@ export default function PerfilScreen() {
               </View>
               <Ionicons name="chevron-forward" size={18} color={theme.separator} />
             </TouchableOpacity>
+
+            {/* DEV: Premium Toggle - Visible en desarrollo o modo mock (Expo Go) */}
+            {(__DEV__ || __mockMode) && (
+              <View style={[styles.optionRow, { borderBottomWidth: 0 }]}>
+                <View style={[styles.optionIcon, { backgroundColor: __mockMode ? '#FF9500' : '#FF3B30' }]}>
+                  <Ionicons name="flask" size={18} color="white" />
+                </View>
+                <View style={styles.optionContent}>
+                  <Text style={[styles.optionLabel, { color: theme.text }]}>
+                    Premium {__mockMode ? '(Demo)' : '(DEV)'}
+                  </Text>
+                  <Text style={[styles.optionHint, { color: theme.icon }]}>
+                    {__mockMode
+                      ? 'Modo demo - RevenueCat no disponible'
+                      : (__devOverrideActive ? 'Override activo' : 'Usar estado real')
+                    }
+                  </Text>
+                </View>
+                <Switch
+                  value={isPro}
+                  onValueChange={(val) => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    __devSetPremium(val);
+                  }}
+                  trackColor={{ false: theme.separator, true: mifacuGold + '60' }}
+                  thumbColor={isPro ? mifacuGold : '#f4f3f4'}
+                  ios_backgroundColor={theme.separator}
+                />
+              </View>
+            )}
           </View>
         </View>
 
@@ -493,6 +570,32 @@ const styles = StyleSheet.create({
   optionLabel: { fontSize: 16, fontWeight: '600' },
   optionHint: { fontSize: 12, fontWeight: '500', marginTop: 2 },
   statusDot: { width: 10, height: 10, borderRadius: 5 },
+
+  // Premium Badge
+  premiumBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  premiumBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  premiumBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  devToggle: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,0,0,0.1)',
+  },
+  devToggleText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
 
   // Logout
   logoutButton: {

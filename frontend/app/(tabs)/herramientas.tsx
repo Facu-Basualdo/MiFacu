@@ -7,15 +7,16 @@ import {
   StyleSheet,
   StatusBar,
   Platform,
-  TouchableOpacity,
+  Pressable,
   Animated,
-  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { Colors } from '../../src/constants/theme';
+import { Colors, mifacuGold } from '../../src/constants/theme';
 import { useTheme } from '../../src/context/ThemeContext';
+import { usePremium } from '../../src/context/PremiumContext';
 
 interface ToolItem {
   id: string;
@@ -24,40 +25,193 @@ interface ToolItem {
   subtitle: string;
   color: string;
   route: string;
+  premium?: boolean;
 }
 
-const TOOLS: ToolItem[] = [
-  { id: 'simulador', icon: 'calculator', label: 'Simulador de correlativas', subtitle: 'Planifica qué materias rendir', color: 'red', route: '/simulador' },
-  { id: 'calificaciones', icon: 'chatbubbles', label: 'Reseñas de cátedras', subtitle: 'Opiniones de profesores y materias', color: 'tint', route: '/selectMateria' },
-  { id: 'finales', icon: 'star', label: 'Finales', subtitle: 'Gestiona tus exámenes finales', color: 'blue', route: '/finales' },
-  { id: 'parciales', icon: 'calendar', label: 'Parciales/Entregas', subtitle: 'Seguimiento de parciales y entregas', color: 'orange', route: '/parciales' },
-  { id: 'horarios', icon: 'time', label: 'Horarios', subtitle: 'Ver horarios de cursada', color: 'green', route: '/horarios' },
-  { id: 'repositorio', icon: 'folder-open', label: 'Repositorio', subtitle: 'Links y recursos útiles', color: 'slate', route: '/repositorio' },
-  { id: 'timeline', icon: 'calendar', label: 'Calendario', subtitle: 'Visión anual', color: 'tint', route: '/linea-de-tiempo' },
-  { id: 'temas-finales', icon: 'document-text', label: 'Temas de Finales', subtitle: 'Temas frecuentes en mesas de final', color: 'orange', route: '/selectMateriaFija' },
+interface ToolCategory {
+  title: string;
+  tools: ToolItem[];
+}
+
+const TOOL_CATEGORIES: ToolCategory[] = [
+  {
+    title: 'Gestión académica',
+    tools: [
+      { id: 'simulador', icon: 'calculator', label: 'Simulador', subtitle: 'Planificá qué materias rendir', color: 'red', route: '/simulador', premium: true },
+      { id: 'finales', icon: 'star', label: 'Finales', subtitle: 'Gestiona tus exámenes finales', color: 'blue', route: '/finales' },
+      { id: 'parciales', icon: 'calendar', label: 'Parciales y Entregas', subtitle: 'Seguimiento de parciales y entregas', color: 'orange', route: '/parciales' },
+      { id: 'temas-finales', icon: 'document-text', label: 'Temas de Finales', subtitle: 'Temas frecuentes en mesas de final', color: 'orange', route: '/selectMateriaFija', premium: true },
+    ],
+  },
+  {
+    title: 'Recursos',
+    tools: [
+      { id: 'calificaciones', icon: 'chatbubbles', label: 'Reseñas', subtitle: 'Opiniones de profesores y cátedras', color: 'tint', route: '/selectMateria', premium: true },
+      { id: 'repositorio', icon: 'folder-open', label: 'Repositorio', subtitle: 'Links y recursos útiles', color: 'slate', route: '/repositorio' },
+      { id: 'horarios', icon: 'time', label: 'Horarios', subtitle: 'Ver horarios de cursada', color: 'green', route: '/horarios' },
+      { id: 'timeline', icon: 'calendar', label: 'Calendario', subtitle: 'Visión anual de tu carrera', color: 'tint', route: '/linea-de-tiempo' },
+    ],
+  },
 ];
 
-const AnimatedItem = ({ children, index }: { children: React.ReactNode; index: number }) => {
+// ─── Animated Card Entry ───
+const AnimatedCard = ({ children, index }: { children: React.ReactNode; index: number }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
+  const scaleAnim = useRef(new Animated.Value(0.92)).current;
 
   React.useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 400, delay: index * 60, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0, duration: 400, delay: index * 60, useNativeDriver: true }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        delay: index * 50,
+        useNativeDriver: true,
+        friction: 8,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 350,
+        delay: index * 50,
+        useNativeDriver: true,
+      }),
     ]).start();
   }, []);
 
   return (
-    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }] }}>
       {children}
     </Animated.View>
   );
 };
 
+// ─── Tool Card (Apple Library style) ───
+const ToolCard = ({
+  tool,
+  index,
+  theme,
+  isPro,
+  getColor,
+  onPress,
+}: {
+  tool: ToolItem;
+  index: number;
+  theme: typeof Colors.light;
+  isPro: boolean;
+  getColor: (c: string) => string;
+  onPress: (route: string) => void;
+}) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const color = getColor(tool.color);
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.97,
+      useNativeDriver: true,
+      friction: 8,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 8,
+    }).start();
+  };
+
+  return (
+    <AnimatedCard index={index}>
+      <Animated.View style={[styles.cardWrapper, { transform: [{ scale: scaleAnim }] }]}>
+        <Pressable
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          onPress={() => onPress(tool.route)}
+        >
+          <LinearGradient
+            colors={[color + '14', color + '06']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={styles.card}
+          >
+            {/* Icon */}
+            <View style={[styles.iconSquare, { backgroundColor: color }]}>
+              <Ionicons name={tool.icon} size={22} color="#fff" />
+            </View>
+
+            {/* Text */}
+            <View style={styles.cardTextContainer}>
+              <View style={styles.cardTitleRow}>
+                <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1}>
+                  {tool.label}
+                </Text>
+                {tool.premium && !isPro && (
+                  <View style={styles.proBadge}>
+                    <Text style={styles.proBadgeText}>PRO</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.cardSubtitle, { color: theme.icon }]} numberOfLines={1}>
+                {tool.subtitle}
+              </Text>
+            </View>
+
+            {/* Right */}
+            {tool.premium && !isPro ? (
+              <Ionicons name="lock-closed" size={16} color={mifacuGold} />
+            ) : (
+              <Ionicons name="chevron-forward" size={18} color={theme.separator} />
+            )}
+          </LinearGradient>
+        </Pressable>
+      </Animated.View>
+    </AnimatedCard>
+  );
+};
+
+// ─── Premium Banner ───
+const PremiumBanner = ({
+  theme,
+  onPress,
+}: {
+  theme: typeof Colors.light;
+  onPress: () => void;
+}) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, { toValue: 0.97, useNativeDriver: true, friction: 8 }).start();
+  };
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, friction: 8 }).start();
+  };
+
+  return (
+    <Animated.View style={[styles.bannerWrapper, { transform: [{ scale: scaleAnim }] }]}>
+      <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={onPress}>
+        <LinearGradient
+          colors={[mifacuGold, '#D4A84B']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.banner}
+        >
+          <View style={styles.bannerIconCircle}>
+            <Ionicons name="star" size={20} color={mifacuGold} />
+          </View>
+          <View style={styles.bannerTextContainer}>
+            <Text style={styles.bannerTitle}>Desbloquea Premium</Text>
+            <Text style={styles.bannerSubtitle}>Accedé a todas las herramientas</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#fff" />
+        </LinearGradient>
+      </Pressable>
+    </Animated.View>
+  );
+};
+
+// ─── Main Screen ───
 export default function HerramientasScreen() {
   const router = useRouter();
   const { colorScheme, isDark } = useTheme();
+  const { isPro } = usePremium();
   const theme = Colors[colorScheme];
 
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -82,6 +236,8 @@ export default function HerramientasScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push(route as any);
   };
+
+  let globalIndex = 0;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -116,32 +272,35 @@ export default function HerramientasScreen() {
           </SafeAreaView>
         </Animated.View>
 
-        {/* TOOLS GRID */}
-        <View style={styles.section}>
-          <View style={[styles.toolsContainer, { backgroundColor: theme.backgroundSecondary }]}>
-            {TOOLS.map((tool, index) => (
-              <AnimatedItem key={tool.id} index={index}>
-                <TouchableOpacity
-                  style={[
-                    styles.toolRow,
-                    index < TOOLS.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.separator },
-                  ]}
-                  onPress={() => handlePress(tool.route)}
-                  activeOpacity={0.6}
-                >
-                  <View style={[styles.toolIconContainer, { backgroundColor: getColor(tool.color) + '15' }]}>
-                    <Ionicons name={tool.icon} size={22} color={getColor(tool.color)} />
-                  </View>
-                  <View style={styles.toolInfo}>
-                    <Text style={[styles.toolLabel, { color: theme.text }]}>{tool.label}</Text>
-                    <Text style={[styles.toolSubtitle, { color: theme.icon }]}>{tool.subtitle}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={theme.icon} />
-                </TouchableOpacity>
-              </AnimatedItem>
-            ))}
+        {/* PREMIUM BANNER */}
+        {!isPro && (
+          <View style={styles.section}>
+            <PremiumBanner theme={theme} onPress={() => handlePress('/subscription')} />
           </View>
-        </View>
+        )}
+
+        {/* TOOL CATEGORIES */}
+        {TOOL_CATEGORIES.map((category) => (
+          <View key={category.title} style={styles.categorySection}>
+            <Text style={[styles.categoryTitle, { color: theme.text }]}>{category.title}</Text>
+            <View style={styles.cardList}>
+              {category.tools.map((tool) => {
+                const idx = globalIndex++;
+                return (
+                  <ToolCard
+                    key={tool.id}
+                    tool={tool}
+                    index={idx}
+                    theme={theme}
+                    isPro={isPro}
+                    getColor={getColor}
+                    onPress={handlePress}
+                  />
+                );
+              })}
+            </View>
+          </View>
+        ))}
 
         {/* INFO */}
         <View style={styles.infoSection}>
@@ -210,33 +369,99 @@ const styles = StyleSheet.create({
 
   section: { paddingHorizontal: 20 },
 
-  toolsContainer: {
-    borderRadius: 14,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  toolRow: {
+  // Premium Banner
+  bannerWrapper: { marginBottom: 8 },
+  banner: {
+    borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
   },
-  toolIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+  bannerIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14,
   },
-  toolInfo: { flex: 1 },
-  toolLabel: { fontSize: 16, fontWeight: '600', marginBottom: 2 },
-  toolSubtitle: { fontSize: 13 },
+  bannerTextContainer: { flex: 1 },
+  bannerTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  bannerSubtitle: { color: 'rgba(255,255,255,0.85)', fontSize: 13, marginTop: 2 },
 
+  // Categories
+  categorySection: {
+    paddingHorizontal: 20,
+    marginTop: 28,
+  },
+  categoryTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    marginBottom: 14,
+  },
+  cardList: {
+    gap: 10,
+  },
+
+  // Tool Card
+  cardWrapper: {
+    // shadow on the wrapper so it doesn't get clipped by gradient overflow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  iconSquare: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  cardTextContainer: {
+    flex: 1,
+    marginRight: 10,
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  cardSubtitle: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  proBadge: {
+    backgroundColor: mifacuGold + '20',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  proBadgeText: {
+    color: mifacuGold,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
+  // Info card
   infoSection: { paddingHorizontal: 20, marginTop: 30 },
   infoCard: {
     flexDirection: 'row',

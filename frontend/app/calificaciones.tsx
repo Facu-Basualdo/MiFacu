@@ -24,8 +24,9 @@ import { CalificacionCatedra, TipoVoto, CreateCalificacionDTO } from '../src/typ
 import { CalificacionCard } from '../src/components/calificaciones/CalificacionCard';
 import { AgregarCalificacionSheet } from '../src/components/calificaciones/AgregarCalificacionSheet';
 import { ReportarSheet } from '../src/components/calificaciones/ReportarSheet';
+import { PremiumGate } from '../src/components/premium';
 
-export default function CalificacionesScreen() {
+function CalificacionesContent() {
     const router = useRouter();
     const { materiaId, materiaNombre } = useLocalSearchParams<{ materiaId?: string; materiaNombre?: string }>();
     const { colorScheme, isDark } = useTheme();
@@ -261,6 +262,14 @@ export default function CalificacionesScreen() {
                 theme={theme}
             />
         </KeyboardAvoidingView>
+    );
+}
+
+export default function CalificacionesScreen() {
+    return (
+        <PremiumGate featureName="Reseñas de Cátedras">
+            <CalificacionesContent />
+        </PremiumGate>
     );
 }
 

@@ -24,8 +24,9 @@ import { TemaFinal, TipoVoto, CreateTemaFinalDTO, EstadisticaTema } from '../src
 import { TemaFinalCard } from '../src/components/temas-finales/TemaFinalCard';
 import { AgregarTemaSheet } from '../src/components/temas-finales/AgregarTemaSheet';
 import { ReportarSheet } from '../src/components/calificaciones/ReportarSheet';
+import { PremiumGate } from '../src/components/premium';
 
-export default function TemasFinalesScreen() {
+function TemasFinalesContent() {
     const router = useRouter();
     const { materiaId, materiaNombre } = useLocalSearchParams<{ materiaId?: string; materiaNombre?: string }>();
     const { colorScheme, isDark } = useTheme();
@@ -340,6 +341,14 @@ export default function TemasFinalesScreen() {
                 theme={theme}
             />
         </KeyboardAvoidingView>
+    );
+}
+
+export default function TemasFinalesScreen() {
+    return (
+        <PremiumGate featureName="Temas de Finales">
+            <TemasFinalesContent />
+        </PremiumGate>
     );
 }
 
