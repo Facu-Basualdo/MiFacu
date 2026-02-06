@@ -20,8 +20,12 @@ export default function GoogleSignInButton() {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
             // Generar redirect URL consistente según el entorno
+            // Para Expo Go, necesitamos que sea exp://IP:PORT
+            // Para Builds, necesitamos el scheme definido en app.json
             const redirectUrl = Linking.createURL('/');
-            console.log('Google OAuth redirect URL:', redirectUrl);
+
+            // Warm up browser
+            await WebBrowser.warmUpAsync();
 
             const { data, error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
@@ -35,23 +39,36 @@ export default function GoogleSignInButton() {
             if (!data?.url) throw new Error('No se pudo obtener la URL de autenticación');
 
             const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-            console.log('WebBrowser result type:', result.type);
+
+            // Cool down
+            await WebBrowser.coolDownAsync();
 
             if (result.type === 'success' && result.url) {
-                console.log('OAuth callback URL received');
+                console.log('OAuth callback URL received:', result.url);
                 const hash = result.url.split('#')[1];
-                if (hash) {
-                    const params = new URLSearchParams(hash);
+                // Handle both query params (?) and hash (#) fragments just in case
+                const paramsStr = hash || result.url.split('?')[1];
+
+                if (paramsStr) {
+                    const params = new URLSearchParams(paramsStr);
                     const access_token = params.get('access_token');
                     const refresh_token = params.get('refresh_token');
 
+                    console.log('Tokens extracted:', {
+                        hasAccessToken: !!access_token,
+                        hasRefreshToken: !!refresh_token
+                    });
+
                     if (access_token && refresh_token) {
+                        console.log('Setting Supabase session...');
                         const { error: sessionError } = await supabase.auth.setSession({
                             access_token,
                             refresh_token
                         });
+                        console.log('Session set result:', { error: sessionError });
+
                         if (sessionError) throw sessionError;
-                        console.log('Session establecida correctamente');
+                        console.log('Session established successfully');
                     } else {
                         // Verificar si hay error en los params
                         const error = params.get('error');
@@ -65,11 +82,9 @@ export default function GoogleSignInButton() {
                     throw new Error('Respuesta de autenticación incompleta');
                 }
             } else if (result.type === 'cancel') {
-                console.log('Usuario canceló el login');
                 // No mostrar error si el usuario canceló
                 return;
             } else if (result.type === 'dismiss') {
-                console.log('Browser dismissed');
                 return;
             }
         } catch (error: any) {

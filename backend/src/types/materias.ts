@@ -1,7 +1,7 @@
 export enum Duración {
     Anual = 'Anual',
-    Cuatrimestral1 = 'Primer Cuatrimestre',
-    Cuatrimestral2 = 'Segundo Cuatrimestre',
+    Cuatrimestral = 'Cuatrimestral',
+    Trimestral = 'Trimestral',
 }
 
 export enum EstadoMateriaUsuario {

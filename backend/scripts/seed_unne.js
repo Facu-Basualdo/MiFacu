@@ -6,8 +6,9 @@ const CAREER = { nombre: "Diseño Gráfico" };
 
 const DURACION = {
     Anual: 'Anual',
-    C1: 'Primer Cuatrimestre',
-    C2: 'Segundo Cuatrimestre'
+    C1: 'Cuatrimestral',
+    C2: 'Cuatrimestral',
+    Trimestral: 'Trimestral'
 };
 
 const MATERIAS = [
